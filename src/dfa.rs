@@ -6,10 +6,10 @@ use std::ascii::escape_default;
 
 type DfaNode = HashMap<u8, u32>;
 
+// nodes[i].0 stands for node state(whether is terminal, and which nfa it belongs)
 #[derive(Debug)]
 pub struct Dfa {
-  nodes: Vec<DfaNode>,
-  accept: BitSet,
+  pub nodes: Vec<(Option<u32>, DfaNode)>,
 }
 
 impl Dfa {
@@ -34,7 +34,7 @@ impl Dfa {
 }
 
 impl Dfa {
-  pub fn from_nfa(nfa: &Nfa) -> Dfa {
+  pub fn from_nfa(nfa: &Nfa, id: u32) -> Dfa {
     let mut alphabet = HashSet::new();
     for edges in &nfa.nodes {
       for (&k, _) in edges {
@@ -52,7 +52,6 @@ impl Dfa {
     q.push_back(bs);
     let mut tmp = BitSet::new(nfa.nodes.len());
     let mut nodes = Vec::new();
-    let mut accept = Vec::new();
     while let Some(cur) = q.pop_front() {
       let mut link = HashMap::new();
       for &k in &alphabet {
@@ -76,31 +75,136 @@ impl Dfa {
         });
         link.insert(k, id);
       }
-      nodes.push(link);
-      accept.push(cur.test(nfa.nodes.len() - 1));
+      nodes.push((if cur.test(nfa.nodes.len() - 1) { Some(id) } else { None }, link));
     }
-    Dfa { nodes, accept: BitSet::from_vec(&accept) }
+    Dfa { nodes }
   }
 
   pub fn print_dot(&self) -> String {
     let mut p = IndentPrinter::new();
     p.ln("digraph g {").inc();
     for (idx, node) in self.nodes.iter().enumerate() {
-      for (&k, &out) in node {
+      for (&k, &out) in &node.1 {
         p.ln(format!(r#"{} -> {} [label="{}"];"#, idx, out, (k as char).escape_default()));
       }
-      if self.accept.test(idx) {
-        p.ln(format!(r#"{}[shape=doublecircle, label="{}"]"#, idx, idx));
-      } else {
-        p.ln(format!(r#"{}[shape=circle, label="{}"]"#, idx, idx));
-      }
+      match node.0 {
+        Some(id) => p.ln(format!(r#"{}[shape=doublecircle, label="{}\naccept:{}"]"#, idx, idx, id)),
+        None => p.ln(format!(r#"{}[shape=circle, label="{}"]"#, idx, idx)),
+      };
     }
     p.dec().ln("}");
     p.finish()
   }
 
-  pub fn minimize(&mut self) {
-    unimplemented!()
+  pub fn minimize(&self) -> Dfa {
+    let n = self.nodes.len();
+    let mut rev_edges = vec![HashMap::new(); n];
+    for (i, (_, edges)) in self.nodes.iter().enumerate() {
+      for (&k, &out) in edges {
+        rev_edges[out as usize].entry(k).or_insert_with(|| Vec::new()).push(i as u32);
+      }
+    }
+    let mut dp = BitSet::new(n * n); // only access lower part
+    let mut q = VecDeque::new();
+    for (i, (id1, _)) in self.nodes.iter().enumerate() {
+      for (j, (id2, _)) in self.nodes.iter().take(i).enumerate() {
+        if id1 != id2 {
+          unsafe {
+            dp.set_unchecked(i * n + j);
+          }
+          q.push_back((i as u32, j as u32));
+        }
+      }
+    }
+    while let Some((i, j)) = q.pop_front() {
+      let (rev_i, rev_j) = (&rev_edges[i as usize], &rev_edges[j as usize]);
+      for (k_i, out_i) in rev_i {
+        if let Some(out_j) = rev_j.get(k_i) {
+          for &ii in out_i {
+            for &jj in out_j {
+              let (ii, jj) = if ii < jj { (jj, ii) } else { (ii, jj) };
+              unsafe {
+                if !dp.test_unchecked(ii as usize * n + jj as usize) {
+                  dp.set_unchecked(ii as usize * n + jj as usize);
+                  q.push_back((ii, jj));
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+//    println!();
+//    for i in 0..n {
+//      print!("{} ", i);
+//      for j in 0..n {
+//        if dp.test(i * n + j) {
+//          print!("X ");
+//        } else {
+//          print!("  ");
+//        }
+//      }
+//      println!()
+//    }
+//    print!("  ");
+//    for i in 0..n {
+//      print!("{} ", i);
+//    }
+//    println!("\n");
+
+    const INVALID: u32 = !1 + 1;
+    let mut vis = vec![INVALID; n];
+    let mut q = VecDeque::new();
+    let mut id2old = Vec::new();
+    let dead_node = (0..n).find(|&i| {
+      if self.nodes[i].0.is_some() {
+        return false;
+      } else {
+        for (_, &out) in &self.nodes[i].1 {
+          if out != i as u32 {
+            return false;
+          }
+        }
+        return true;
+      }
+    });
+    for i in (0..n).rev() {
+      if Some(i) != dead_node && vis[i] == INVALID {
+        let id = id2old.len() as u32;
+        vis[i] = id;
+        q.push_back(i);
+        id2old.push(vec![i as u32]);
+        while let Some(cur) = q.pop_front() {
+          for j in 0..cur {
+            if vis[j] == INVALID {
+              unsafe {
+                if !dp.test_unchecked(cur * n + j) {
+                  vis[j] = id;
+                  q.push_back(j);
+                  id2old.get_unchecked_mut(id as usize).push(j as u32);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    let mut nodes = Vec::new();
+    for old in id2old {
+      let mut link = HashMap::new();
+      let id = self.nodes[old[0] as usize].0;
+      for o in old {
+        for (&k, &out) in &self.nodes[o as usize].1 {
+          if Some(out as usize) != dead_node {
+            link.insert(k, vis[out as usize]);
+          }
+        }
+      }
+      nodes.push((id, link));
+    }
+    Dfa { nodes }
   }
 
   pub fn merge(a: &Dfa, b: &Dfa) -> Dfa {

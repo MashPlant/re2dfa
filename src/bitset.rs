@@ -50,12 +50,17 @@ impl BitSet {
   // no check, for my convenience
   #[inline]
   pub fn test(&self, n: usize) -> bool {
-    return ((self.inner[n >> 6] >> (n & 63)) & 1) != 0;
+    ((self.inner[n >> 6] >> (n & 63)) & 1) != 0
   }
 
   #[inline]
   pub unsafe fn test_unchecked(&self, n: usize) -> bool {
-    return ((self.inner.get_unchecked(n >> 6) >> (n & 63)) & 1) != 0;
+    ((self.inner.get_unchecked(n >> 6) >> (n & 63)) & 1) != 0
+  }
+
+  #[inline]
+  pub fn any(&self) -> bool {
+    self.inner.iter().any(|&x| x != 0)
   }
 
   #[inline]
