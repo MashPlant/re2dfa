@@ -11,15 +11,12 @@ macro_rules! map (
   }};
 );
 
-//// 0 for invalid, because no edge points to 0
-//const INVALID: u32 = 0;
-
 type NfaNode = HashMap<u8, SmallVec<[u32; 4]>>;
 
 // start state should be 0, end state should be (nodes.len() - 1) as u32
 #[derive(Debug)]
 pub struct Nfa {
-  nodes: Vec<NfaNode>,
+  pub nodes: Vec<NfaNode>,
 }
 
 impl Nfa {
