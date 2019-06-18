@@ -1,6 +1,6 @@
 use crate::nfa::Nfa;
 use crate::bitset::BitSet;
-use crate::printer::IndentPrinter;
+use crate::printer::{IndentPrinter, pretty_ch_display, pretty_chs_display};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::ascii::escape_default;
 
@@ -84,8 +84,14 @@ impl Dfa {
     let mut p = IndentPrinter::new();
     p.ln("digraph g {").inc();
     for (idx, node) in self.nodes.iter().enumerate() {
+      let mut outs = HashMap::new();
       for (&k, &out) in &node.1 {
-        p.ln(format!(r#"{} -> {} [label="{}"];"#, idx, out, (k as char).escape_default()));
+        outs.entry(out).or_insert_with(|| Vec::new()).push(k);
+      }
+      // just make the graph look beautiful...
+      for (out, mut edge) in outs {
+        edge.sort_unstable();
+        p.ln(format!(r#"{} -> {} [label="{}"];"#, idx, out, pretty_chs_display(&edge)));
       }
       match node.0 {
         Some(id) => p.ln(format!(r#"{}[shape=doublecircle, label="{}\naccept:{}"]"#, idx, idx, id)),
@@ -134,7 +140,7 @@ impl Dfa {
         }
       }
     }
-
+//    you can remove the comments and check the equivalent relation
 //    println!();
 //    for i in 0..n {
 //      print!("{} ", i);
@@ -190,7 +196,9 @@ impl Dfa {
         }
       }
     }
+    id2old.reverse();
 
+    let new_len = id2old.len() as u32;
     let mut nodes = Vec::new();
     for old in id2old {
       let mut link = HashMap::new();
@@ -198,7 +206,7 @@ impl Dfa {
       for o in old {
         for (&k, &out) in &self.nodes[o as usize].1 {
           if Some(out as usize) != dead_node {
-            link.insert(k, vis[out as usize]);
+            link.insert(k, new_len - 1 - vis[out as usize]);
           }
         }
       }
@@ -207,7 +215,72 @@ impl Dfa {
     Dfa { nodes }
   }
 
-  pub fn merge(a: &Dfa, b: &Dfa) -> Dfa {
-    unimplemented!()
+  // basically it is just like turning an nfa to an dfa
+  pub fn merge(xs: &[Dfa]) -> Dfa {
+    let mut alphabet = HashSet::new();
+    for dfa in xs {
+      for node in &dfa.nodes {
+        for (&k, _) in &node.1 {
+          alphabet.insert(k);
+        }
+      }
+    }
+    let alphabet = alphabet.into_iter().collect::<Vec<_>>();
+    let mut n_nodes = Vec::new();
+    let mut accept = HashMap::new();
+    let mut begs = Vec::new();
+    for dfa in xs {
+      let len = n_nodes.len() as u32;
+      begs.push(len);
+      for (idx, node) in dfa.nodes.iter().enumerate() {
+        if let Some(id) = node.0 {
+          accept.insert(idx as u32 + len, id);
+        }
+        let edges = node.1.iter().map(|(&k, &v)| (k, v + len)).collect::<HashMap<_, _>>();
+        n_nodes.push(edges);
+      }
+    }
+    let mut bs = BitSet::new(n_nodes.len());
+    for beg in begs {
+      unsafe { bs.set_unchecked(beg as usize); }
+    }
+    let mut ss = HashMap::new();
+    let mut q = VecDeque::new();
+    ss.insert(bs.clone(), 0);
+    q.push_back(bs);
+    let mut tmp = BitSet::new(n_nodes.len());
+    let mut nodes = Vec::new();
+    while let Some(cur) = q.pop_front() {
+      let mut link = HashMap::new();
+      for &k in &alphabet {
+        tmp.clear_all();
+        for (i, edges) in n_nodes.iter().enumerate() {
+          unsafe {
+            if cur.test_unchecked(i) {
+              if let Some(&out) = edges.get(&k) {
+                tmp.set_unchecked(out as usize);
+              }
+            }
+          }
+        }
+        let id = ss.len() as u32;
+        let id = *ss.entry(tmp.clone()).or_insert_with(|| {
+          q.push_back(tmp.clone());
+          id
+        });
+        link.insert(k, id);
+      }
+      const INVALID: u32 = !1 + 1;
+      let mut min_id = INVALID;
+      for i in 0..n_nodes.len() {
+        if unsafe { cur.test_unchecked(i) } {
+          if let Some(&id) = accept.get(&(i as u32)) {
+            min_id = min_id.min(id);
+          }
+        }
+      }
+      nodes.push((if min_id != INVALID { Some(min_id) } else { None }, link));
+    }
+    Dfa { nodes }
   }
 }

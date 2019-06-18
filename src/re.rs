@@ -52,6 +52,8 @@ pub fn parse(s: &str) -> Result<Re, (&'static str, usize)> {
         b'n' => opr.push(Re::Ch(b'\n')),
         b't' => opr.push(Re::Ch(b'\t')),
         b'\\' => opr.push(Re::Ch(b'\\')),
+        b'd' => opr.push(Re::Disjunction((b'0'..=b'9').map(|it| Re::Ch(it)).collect())),
+        b's' => opr.push(Re::Disjunction(("\t\n\r ".bytes()).map(|it| Re::Ch(it)).collect())),
         b => opr.push(Re::Ch(b)),
       }
       while let Some(op) = opt.last().map(|it| *it) {
@@ -62,6 +64,7 @@ pub fn parse(s: &str) -> Result<Re, (&'static str, usize)> {
       add_concat!();
     } else {
       match byte {
+        b'\\' => escape = true,
         b'*' => {
           match opr.pop() {
             Some(l) => opr.push(Re::Kleene(Box::new(l))),
