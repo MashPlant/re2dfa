@@ -1,8 +1,7 @@
 use crate::nfa::Nfa;
 use crate::bitset::BitSet;
-use crate::printer::{IndentPrinter, pretty_ch_display, pretty_chs_display};
+use print::{IndentPrinter, pretty_chs_display};
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::ascii::escape_default;
 
 type DfaNode = HashMap<u8, u32>;
 
@@ -94,7 +93,7 @@ impl Dfa {
         p.ln(format!(r#"{} -> {} [label="{}"];"#, idx, out, pretty_chs_display(&edge)));
       }
       match node.0 {
-        Some(id) => p.ln(format!(r#"{}[shape=doublecircle, label="{}\naccept:{}"]"#, idx, idx, id)),
+        Some(id) => p.ln(format!(r#"{}[shape=doublecircle, label="{}\nacc:{}"]"#, idx, idx, id)),
         None => p.ln(format!(r#"{}[shape=circle, label="{}"]"#, idx, idx)),
       };
     }

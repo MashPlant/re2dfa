@@ -1,3 +1,21 @@
+use nom::{
+  branch::alt,
+  bytes::complete::tag,
+  character::complete::{char, one_of},
+  combinator::{map, cut},
+  error::{convert_error, ErrorKind, ParseError, VerboseError},
+  multi::separated_list,
+  sequence::{preceded, terminated},
+  bytes::complete::take_while_m_n,
+  combinator::map_opt,
+  character::complete::anychar,
+  multi::{many1, many_till},
+  sequence::tuple,
+  Err, IResult,
+};
+use std::collections::HashSet;
+use std::str;
+
 // theoretically Concat & Disjunction only need 2 children
 // but use a Vec here can make future analysis faster
 
@@ -9,128 +27,122 @@ pub enum Re {
   Kleene(Box<Re>),
 }
 
-pub fn parse(s: &str) -> Result<Re, (&'static str, usize)> {
-  #[derive(Ord, PartialOrd, Eq, PartialEq, Copy, Clone, Debug)]
-  enum Opt {
-    LeftParam,
-    Disjunction,
-    Concat,
-  }
-  let (mut opr, mut opt): (_, Vec<(Opt, usize)>) = (Vec::new(), Vec::new());
-  let mut escape = false;
+const META: &'static str = r"()[].|*+\";
 
-  macro_rules! handle_op {
-    ($idx: expr, $var: ident) => {
-      match (opr.pop(), opr.pop()) {
-        (Some(r), Some(l)) => {
-          // do a lot of extra job to reduce the depth of expression tree...
-          opr.push(Re::$var(match (l, r) {
-            (Re::$var(mut l), Re::$var(mut r)) => (l.append(&mut r), l).1,
-            (Re::$var(mut l), r) => (l.push(r), l).1,
-            (l, Re::$var(mut r)) => (r.push(l), r).1,
-            (l, r) => vec![l, r],
-          }))
+// (){}[].|*+\
+fn parse_atom<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Re, E> {
+  alt((
+    map(take_while_m_n(1, 1, |ch| !META.contains(ch)), |s: &'a str| Re::Ch(s.as_bytes()[0])),
+    map(tag(r"\n"), |_| Re::Ch(b'\n')),
+    map(tag(r"\r"), |_| Re::Ch(b'\r')),
+    map(tag(r"\t"), |_| Re::Ch(b'\t')),
+    map(tag(r"\d"), |_| Re::Disjunction((b'0'..=b'9').map(|it| Re::Ch(it)).collect())),
+    map(tag(r"\s"), |_| Re::Disjunction(("\t\n\r ".bytes()).map(|it| Re::Ch(it)).collect())),
+    preceded(tag(r"\\"), map(cut(one_of(META)), |ch| Re::Ch(ch as u8))),
+    preceded(char('('), cut(terminated(parse_re, char(')')))),
+    parse_range,
+  ))(i)
+}
+
+// I thought nom should have provided such a function...
+// can escaped & escaped_transform of help here?
+fn ascii<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, u8, E> {
+  alt((
+    map(tag(r"\'"), |_| b'\''),
+    map(tag(r#"\""#), |_| b'\"'),
+    map(tag(r"\\"), |_| b'\\'),
+    map(tag(r"\n"), |_| b'\n'),
+    map(tag(r"\r"), |_| b'\r'),
+    map(tag(r"\t"), |_| b'\t'),
+    map(anychar, |ch| ch as u8),
+  ))(i)
+}
+
+// oh pls someone teach me how to use nom...
+// will not be of help here?
+fn ascii_bracket<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, u8, E> {
+  match one_of::<&'a str, &'a str, E>("[]")(i) {
+    Ok(_) => Err(Err::Error(E::from_error_kind(i, ErrorKind::Not))),
+    _ => alt((
+      map(tag(r"\["), |_| b'['),
+      map(tag(r"\]"), |_| b']'),
+      ascii
+    ))(i),
+  }
+}
+
+fn parse_range<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Re, E> {
+  // why this is not Copy???
+  macro_rules! ranges {
+    () => {
+      map(many1(alt((
+        map(tuple((ascii_bracket, tag("-"), ascii_bracket)), |(l, _, u)| (l, u)),
+        map(ascii_bracket, |x| (x, x)),
+      ))), |ranges| {
+        let mut range = HashSet::new();
+        for (l, u) in ranges {
+          for i in l..=u {
+            range.insert(i);
+          }
         }
-        _ => return Err(("binary operator misses operand", $idx))
-      }
+        range
+      })
     };
   }
+  preceded(tag("["), cut(terminated(alt((
+    map(ranges!(), |range| {
+      let mut range = range.into_iter().collect::<Vec<_>>();
+      range.sort_unstable();
+      Re::Disjunction(range.into_iter().map(|ch| Re::Ch(ch)).collect::<Vec<_>>())
+    }),
+    map(preceded(tag("^"), ranges!()), |range| {
+      Re::Disjunction(((b' '..=b'~').chain("\n\t\r".bytes())).filter(|x| !range.contains(x)).map(|it| Re::Ch(it)).collect())
+    })
+  )), tag("]"))))(i)
+}
 
-  for ((idx, byte), nxt) in s.bytes().enumerate().zip(s.bytes().skip(1).chain(b')'..=b')')) {
-    macro_rules! add_concat {
-      () => {
-        // quite dirty... I don't know whether this is enough
-        if nxt != b')' && nxt != b'*' && nxt != b'+' && nxt != b'|' {
-          opt.push((Opt::Concat, idx));
-        }
-      };
-    }
+fn parse_concat<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Vec<Re>, E> {
+  many1(parse_atom)(i)
+}
 
-    if escape {
-      escape = false;
-      match byte {
-        b'n' => opr.push(Re::Ch(b'\n')),
-        b't' => opr.push(Re::Ch(b'\t')),
-        b'\\' => opr.push(Re::Ch(b'\\')),
-        b'd' => opr.push(Re::Disjunction((b'0'..=b'9').map(|it| Re::Ch(it)).collect())),
-        b's' => opr.push(Re::Disjunction(("\t\n\r ".bytes()).map(|it| Re::Ch(it)).collect())),
-        b => opr.push(Re::Ch(b)),
+fn parse_disjunction<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Vec<Re>, E> {
+  // eliminate left recursion???
+  let mut x = terminated(parse_concat, tag("|"))(i)?;
+  let mut xs = separated_list(tag("|"), parse_re)(x.0)?;
+  xs.1.push(if x.1.len() == 1 { x.1.remove(0) } else { Re::Concat(x.1) });
+  Ok((xs.0, xs.1))
+}
+
+fn parse_kleene<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Vec<Re>, E> {
+  map_opt(many_till(parse_atom, one_of("*+")), |mut v| {
+    let last = v.0.pop()?;
+    match v.1 {
+      '*' => v.0.push(Re::Kleene(Box::new(last))),
+      '+' => {
+        v.0.push(last.clone());
+        v.0.push(Re::Kleene(Box::new(last)));
       }
-      while let Some(op) = opt.last().map(|it| *it) {
-        if op.0 < Opt::Concat { break; }
-        opt.pop();
-        handle_op!(op.1, Concat);
-      }
-      add_concat!();
-    } else {
-      match byte {
-        b'\\' => escape = true,
-        b'*' => {
-          match opr.pop() {
-            Some(l) => opr.push(Re::Kleene(Box::new(l))),
-            None => return Err(("unary operator misses operand", idx))
-          }
-          add_concat!();
-        }
-        b'+' => {
-          match opr.pop() {
-            Some(l) => opr.push(Re::Concat(vec![l.clone(), Re::Kleene(Box::new(l))])),
-            None => return Err(("unary operator misses operand", idx))
-          }
-          add_concat!();
-        }
-        b'|' => {
-          while let Some(op) = opt.last().map(|it| *it) {
-            if op.0 < Opt::Disjunction { break; }
-            opt.pop();
-            match op.0 {
-              Opt::Disjunction => handle_op!(op.1, Disjunction),
-              Opt::Concat => handle_op!(op.1, Concat),
-              _ => unreachable!(),
-            }
-          }
-          opt.push((Opt::Disjunction, idx));
-        }
-        b'(' => opt.push((Opt::LeftParam, idx)),
-        b')' => {
-          while let Some(op) = opt.pop() {
-            match op.0 {
-              Opt::Disjunction => handle_op!(op.1, Disjunction),
-              Opt::Concat => handle_op!(op.1, Concat),
-              Opt::LeftParam => break,
-            }
-          }
-          add_concat!();
-        }
-        b'.' => {
-          // accept all printable ascii char, quite brutal
-          opr.push(Re::Disjunction((b' '..=b'~').map(|it| Re::Ch(it)).collect()));
-          while let Some(op) = opt.last().map(|it| *it) {
-            if op.0 < Opt::Concat { break; }
-            opt.pop();
-            handle_op!(op.1, Concat);
-          }
-          add_concat!();
-        }
-        b => {
-          opr.push(Re::Ch(b));
-          while let Some(op) = opt.last().map(|it| *it) {
-            if op.0 < Opt::Concat { break; }
-            opt.pop();
-            handle_op!(op.1, Concat);
-          }
-          add_concat!();
-        }
-      }
+      _ => unreachable!(),
     }
+    Some(v.0)
+  })(i)
+}
+
+fn parse_re<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Re, E> {
+  alt((
+    map(parse_disjunction, |mut v| if v.len() == 1 { v.remove(0) } else { Re::Disjunction(v) }),
+    map(parse_kleene, |mut v| if v.len() == 1 { v.remove(0) } else { Re::Concat(v) }),
+    map(parse_concat, |mut v| if v.len() == 1 { v.remove(0) } else { Re::Concat(v) }),
+  ))(i)
+}
+
+pub fn parse(i: &str) -> Result<Re, String> {
+  let result = parse_re::<VerboseError<&str>>(i);
+  match result {
+    Ok(("", result)) => Ok(result),
+    Ok((remain, _)) => Err(format!("The remaining part cannot be parser: `{}`.", remain)),
+    Err(Err::Error(e)) | Err(Err::Failure(e)) => Err(convert_error(i, e)),
+    // what is it???
+    Err(Err::Incomplete(_)) => unreachable!()
   }
-
-  while let Some(op) = opt.pop() {
-    match op.0 {
-      Opt::Disjunction => handle_op!(op.1, Disjunction),
-      Opt::Concat => handle_op!(op.1, Concat),
-      Opt::LeftParam => return Err(("params mismatch", op.1)),
-    }
-  }
-  Ok(opr.pop().unwrap())
 }

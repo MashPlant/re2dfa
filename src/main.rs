@@ -1,15 +1,17 @@
 #[macro_use]
 extern crate smallvec;
+extern crate nom;
+extern crate bitset;
+extern crate print;
 
 use crate::re::Re;
 use crate::dfa::Dfa;
 use crate::nfa::Nfa;
 
 mod printer;
-mod re;
-mod nfa;
-mod dfa;
-mod bitset;
+pub mod re;
+pub mod nfa;
+pub mod dfa;
 
 fn re2dfa(re: &Re, id: u32) -> Dfa {
   Dfa::from_nfa(&Nfa::from_re(re), id).minimize()
@@ -21,8 +23,7 @@ fn main() {
     &re::parse("int").unwrap(),
     &re::parse("\\d+").unwrap(),
     &re::parse("\\s+").unwrap(),
-    // quite foolish... I will support [] latter
-    &re::parse("(a|b|c|d|e|f|g|h|i|j|k|l|m|n|o|p|q|r|s|t|u|v|w|x|y|z|A|B|C|D|E|F|G|H|I|J|K|L|M|N|O|P|Q|R|S|T|U|V|W|X|Y|Z)(_|a|b|c|d|e|f|g|h|i|j|k|l|m|n|o|p|q|r|s|t|u|v|w|x|y|z|A|B|C|D|E|F|G|H|I|J|K|L|M|N|O|P|Q|R|S|T|U|V|W|X|Y|Z|0|1|2|3|4|5|6|7|8|9)*").unwrap(),
+    &re::parse("[a-zA-Z][_a-zA-Z0-9]*").unwrap(),
   ].iter()
     .enumerate()
     .map(|(idx, re)| re2dfa(re, idx as u32))

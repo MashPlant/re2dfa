@@ -1,5 +1,5 @@
 use crate::re::Re;
-use crate::printer::IndentPrinter;
+use print::IndentPrinter;
 use std::collections::HashMap;
 use smallvec::SmallVec;
 
