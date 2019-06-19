@@ -29,7 +29,6 @@ pub enum Re {
 
 const META: &'static str = r"()[].|*+\";
 
-// (){}[].|*+\
 fn parse_atom<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Re, E> {
   alt((
     map(take_while_m_n(1, 1, |ch| !META.contains(ch)), |s: &'a str| Re::Ch(s.as_bytes()[0])),
@@ -38,7 +37,7 @@ fn parse_atom<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Re, E>
     map(tag(r"\t"), |_| Re::Ch(b'\t')),
     map(tag(r"\d"), |_| Re::Disjunction((b'0'..=b'9').map(|it| Re::Ch(it)).collect())),
     map(tag(r"\s"), |_| Re::Disjunction(("\t\n\r ".bytes()).map(|it| Re::Ch(it)).collect())),
-    preceded(tag(r"\\"), map(cut(one_of(META)), |ch| Re::Ch(ch as u8))),
+    preceded(tag(r"\"), map(cut(one_of(META)), |ch| Re::Ch(ch as u8))),
     preceded(char('('), cut(terminated(parse_re, char(')')))),
     parse_range,
   ))(i)
@@ -90,14 +89,14 @@ fn parse_range<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Re, E
     };
   }
   preceded(tag("["), cut(terminated(alt((
+    map(preceded(tag("^"), cut(ranges!())), |range| {
+      Re::Disjunction(((b' '..=b'~').chain("\n\t\r".bytes())).filter(|x| !range.contains(x)).map(|it| Re::Ch(it)).collect())
+    }),
     map(ranges!(), |range| {
       let mut range = range.into_iter().collect::<Vec<_>>();
       range.sort_unstable();
       Re::Disjunction(range.into_iter().map(|ch| Re::Ch(ch)).collect::<Vec<_>>())
     }),
-    map(preceded(tag("^"), ranges!()), |range| {
-      Re::Disjunction(((b' '..=b'~').chain("\n\t\r".bytes())).filter(|x| !range.contains(x)).map(|it| Re::Ch(it)).collect())
-    })
   )), tag("]"))))(i)
 }
 
