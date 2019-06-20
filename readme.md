@@ -6,9 +6,9 @@ Only limit regex grammar & limited regex usage will be supported. To be more spe
 Tokenize a decaf file of about 300 lines:
 
 ```
-test decaf_dfa    ... bench:      34,466 ns/iter (+/- 158)
-test decaf_re     ... bench:   2,491,649 ns/iter (+/- 5,373)
-test decaf_re_set ... bench:     617,547 ns/iter (+/- 1,772)
+test decaf_dfa    ... bench:      33,487 ns/iter (+/- 238)
+test decaf_re     ... bench:   2,560,722 ns/iter (+/- 6,705)
+test decaf_re_set ... bench:     608,057 ns/iter (+/- 1,523)
 ```
 
 're' brutally uses every re to try to match the string and get longest match; 're_set' only uses possible candidates indicated by RegexSet.

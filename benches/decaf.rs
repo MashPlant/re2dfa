@@ -46,8 +46,8 @@ fn decaf_re_set(b: &mut Bencher) {
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum TokenType {
-  _Eps,
   _Eof,
+  _Eps,
   Void,
   Int,
   Bool,
@@ -313,12 +313,12 @@ mod dfa {
           return Some(Token { ty: _Eof, piece: "".as_bytes(), line: self.cur_line, col: self.cur_col });
         }
         let (mut line, mut col) = (self.cur_line, self.cur_col);
-        let mut last_acc = _Eof; // this is arbitrary, just a value that cannot be returned by
+        let mut last_acc = _Eof; // this is arbitrary, just a value that cannot be returned by user defined function
         let mut state = 0;
         let mut i = 0;
-        while i <= self.string.len() {
+        while i < self.string.len() {
           // '\0' should not be in alphabet
-          let ch = unsafe { if i <= self.string.len() { *self.string.get_unchecked(i) } else { 0 } };
+          let ch = unsafe { *self.string.get_unchecked(i) };
           let &ec = unsafe { CH2EC.get_unchecked((ch & 0x7F) as usize) };
           let &nxt = unsafe { EDGE.get_unchecked(state as usize).get_unchecked(ec as usize) };
           let &acc = unsafe { ACC.get_unchecked(nxt as usize) };
@@ -328,12 +328,9 @@ mod dfa {
             if last_acc == _Eof { // completely dead
               return None;
             } else {
-              match state {
-                // exec user defined function here
-                _ => {}
-              }
-              let piece = &self.string[0..i];
-              self.string = &self.string[i..];
+              // exec user defined function here
+              let piece = unsafe { std::slice::from_raw_parts(self.string.as_ptr(), i) };
+              self.string = unsafe { std::slice::from_raw_parts(self.string.as_ptr().add(i), self.string.len() - i) };
               if last_acc != _Eps {
                 return Some(Token { ty: last_acc, piece, line, col });
               } else {
@@ -352,6 +349,19 @@ mod dfa {
               self.cur_col += 1;
             }
             i += 1;
+          }
+        }
+        // end of file
+        if last_acc == _Eof { // completely dead
+          return None;
+        } else {
+          // exec user defined function here
+          let piece = unsafe { std::slice::from_raw_parts(self.string.as_ptr(), i) };
+          self.string = "".as_bytes();
+          if last_acc != _Eps {
+            return Some(Token { ty: last_acc, piece, line, col });
+          } else {
+            return Some(Token { ty: _Eof, piece: "".as_bytes(), line: self.cur_line, col: self.cur_col });
           }
         }
       }
