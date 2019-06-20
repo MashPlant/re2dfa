@@ -7,9 +7,8 @@ use nom::{
   multi::separated_list,
   sequence::{preceded, terminated},
   bytes::complete::take_while_m_n,
-  combinator::map_opt,
   character::complete::anychar,
-  multi::{many1, many_till},
+  multi::many1,
   sequence::tuple,
   Err, IResult,
 };
@@ -36,10 +35,19 @@ fn parse_atom<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Re, E>
     map(tag(r"\r"), |_| Re::Ch(b'\r')),
     map(tag(r"\t"), |_| Re::Ch(b'\t')),
     map(tag(r"\d"), |_| Re::Disjunction((b'0'..=b'9').map(|it| Re::Ch(it)).collect())),
-    map(tag(r"\s"), |_| Re::Disjunction(("\t\n\r ".bytes()).map(|it| Re::Ch(it)).collect())),
+    map(tag(r"\s"), |_| Re::Disjunction("\t\n\r ".bytes().map(|it| Re::Ch(it)).collect())),
+    map(tag(r"."), |_| Re::Disjunction((b' '..=b'~').chain("\n\t\r".bytes()).map(|it| Re::Ch(it)).collect())),
     preceded(tag(r"\"), map(cut(one_of(META)), |ch| Re::Ch(ch as u8))),
     preceded(char('('), cut(terminated(parse_re, char(')')))),
     parse_range,
+  ))(i)
+}
+
+fn parse_atom_or_kleene<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Re, E> {
+  alt((
+    map(terminated(parse_atom, tag("*")), |a| Re::Kleene(Box::new(a))),
+    map(terminated(parse_atom, tag("+")), |a| Re::Concat(vec![a.clone(), Re::Kleene(Box::new(a))])),
+    parse_atom,
   ))(i)
 }
 
@@ -90,7 +98,7 @@ fn parse_range<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Re, E
   }
   preceded(tag("["), cut(terminated(alt((
     map(preceded(tag("^"), cut(ranges!())), |range| {
-      Re::Disjunction(((b' '..=b'~').chain("\n\t\r".bytes())).filter(|x| !range.contains(x)).map(|it| Re::Ch(it)).collect())
+      Re::Disjunction((b' '..=b'~').chain("\n\t\r".bytes()).filter(|x| !range.contains(x)).map(|it| Re::Ch(it)).collect())
     }),
     map(ranges!(), |range| {
       let mut range = range.into_iter().collect::<Vec<_>>();
@@ -101,37 +109,21 @@ fn parse_range<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Re, E
 }
 
 fn parse_concat<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Vec<Re>, E> {
-  many1(parse_atom)(i)
+  many1(parse_atom_or_kleene)(i)
 }
 
 fn parse_disjunction<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Vec<Re>, E> {
   // eliminate left recursion???
-  let mut x = terminated(parse_concat, tag("|"))(i)?;
+  let x = terminated(parse_concat, tag("|"))(i)?;
   let mut xs = separated_list(tag("|"), parse_re)(x.0)?;
-  xs.1.push(if x.1.len() == 1 { x.1.remove(0) } else { Re::Concat(x.1) });
+  xs.1.push(Re::Concat(x.1));
   Ok((xs.0, xs.1))
-}
-
-fn parse_kleene<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Vec<Re>, E> {
-  map_opt(many_till(parse_atom, one_of("*+")), |mut v| {
-    let last = v.0.pop()?;
-    match v.1 {
-      '*' => v.0.push(Re::Kleene(Box::new(last))),
-      '+' => {
-        v.0.push(last.clone());
-        v.0.push(Re::Kleene(Box::new(last)));
-      }
-      _ => unreachable!(),
-    }
-    Some(v.0)
-  })(i)
 }
 
 fn parse_re<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Re, E> {
   alt((
-    map(parse_disjunction, |mut v| if v.len() == 1 { v.remove(0) } else { Re::Disjunction(v) }),
-    map(parse_kleene, |mut v| if v.len() == 1 { v.remove(0) } else { Re::Concat(v) }),
-    map(parse_concat, |mut v| if v.len() == 1 { v.remove(0) } else { Re::Concat(v) }),
+    map(parse_disjunction, Re::Disjunction),
+    map(parse_concat, Re::Concat),
   ))(i)
 }
 

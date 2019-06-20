@@ -82,7 +82,8 @@ fn main() {
     &re::parse("{").unwrap(),
     &re::parse("}").unwrap(),
     &re::parse(":").unwrap(),
-    &re::parse(r#"""#).unwrap(),
+    &re::parse(r#""[^"\\]*(\\.[^"\\]*)*""#).unwrap(),
+    &re::parse(r#""[^"\\]*(\\.[^"\\]*)*"#).unwrap(),
     &re::parse(r"//[^\n]*").unwrap(),
     &re::parse(r"\d+").unwrap(),
     &re::parse(r"\s+").unwrap(),
@@ -91,8 +92,9 @@ fn main() {
     .enumerate()
     .map(|(idx, re)| re2dfa(re, idx as u32))
     .collect::<Vec<_>>();
-  let merged = dfa::Dfa::merge(&dfa).minimize();
+  let merged = dfa::Dfa::merge(&dfa);
   println!("{}", merged.nodes.len());
+  println!("{}", ec_of_dfas(&[&merged]).iter().max().unwrap());
 
   use std::fs::File;
   use std::io::prelude::*;

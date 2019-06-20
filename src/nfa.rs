@@ -3,14 +3,6 @@ use print::IndentPrinter;
 use std::collections::HashMap;
 use smallvec::SmallVec;
 
-macro_rules! map (
-  { $($key:expr => $value:expr),+ } => {{
-    let mut m = ::std::collections::HashMap::new();
-    $( m.insert($key, $value); )+
-    m
-  }};
-);
-
 type NfaNode = HashMap<u8, SmallVec<[u32; 4]>>;
 
 // start state should be 0, end state should be (nodes.len() - 1) as u32
@@ -20,40 +12,55 @@ pub struct Nfa {
 }
 
 impl Nfa {
+  // a modified Thompson construction, save some useless state
+  // this can tremendously increase the speed of nfa -> dfa(about 10 times)
   pub fn from_re(re: &Re) -> Nfa {
     match re {
-      Re::Ch(c) => Nfa { nodes: vec![map! { *c => smallvec![1] }, HashMap::new()] },
+      &Re::Ch(c) => {
+        let mut node0 = HashMap::new();
+        node0.insert(c, smallvec![1]);
+        Nfa { nodes: vec![node0, HashMap::new()] }
+      }
       Re::Concat(c) => {
-        let mut all = Nfa::from_re(&c[0]);
-        for mut sub in c.iter().skip(1).map(Nfa::from_re) {
-          let len = all.nodes.len() as u32;
+        let mut all = Nfa { nodes: vec![] };
+        for mut sub in c.iter().map(Nfa::from_re) {
+          sub.nodes.pop();
+          let (len, sub_len) = (all.nodes.len() as u32, sub.nodes.len() as u32);
           for edges in &mut sub.nodes {
             for (_, outs) in edges {
               for out in outs {
-                *out += len;
+                if *out == sub_len { // point to old end
+                  *out = len + sub_len; // now point to new end
+                } else {
+                  *out += len;
+                }
               }
             }
           }
-          all.nodes.last_mut().unwrap().insert(0, smallvec![len]);
           all.nodes.append(&mut sub.nodes);
         }
+        all.nodes.push(HashMap::new());
         all
       }
       Re::Disjunction(d) => {
         let mut all = Nfa { nodes: vec![HashMap::new()] };
         let mut subs = d.iter().map(Nfa::from_re).collect::<Vec<_>>();
-        let end = 1 + subs.iter().map(|it| it.nodes.len() as u32).sum::<u32>();
+        let end = 1 + subs.iter().map(|it| it.nodes.len() as u32 - 1).sum::<u32>();
         for sub in &mut subs {
-          let len = all.nodes.len() as u32;
+          sub.nodes.pop();
+          let (len, sub_len) = (all.nodes.len() as u32, sub.nodes.len() as u32);
           for edges in &mut sub.nodes {
             for (_, outs) in edges {
               for out in outs {
-                *out += len;
+                if *out == sub_len { // point to old end
+                  *out = end; // now point to new end
+                } else {
+                  *out += len;
+                }
               }
             }
           }
           all.nodes[0].entry(0).or_insert_with(|| smallvec![]).push(len);
-          sub.nodes.last_mut().unwrap().insert(0, smallvec![end]);
           all.nodes.append(&mut sub.nodes);
         }
         all.nodes.push(HashMap::new());

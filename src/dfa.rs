@@ -34,6 +34,7 @@ impl Dfa {
 }
 
 impl Dfa {
+  // the generated dfa contains a dead state, which will be of help in minimizing it
   pub fn from_nfa(nfa: &Nfa, id: u32) -> Dfa {
     let mut alphabet = HashSet::new();
     for edges in &nfa.nodes {
@@ -216,6 +217,7 @@ impl Dfa {
   }
 
   // basically it is just like turning an nfa to an dfa
+  // note that the generated dfa is already minimized, and contains no dead state
   pub fn merge<D: Borrow<Dfa>>(dfas: &[D]) -> Dfa {
     let mut alphabet = HashSet::new();
     for dfa in dfas {
@@ -263,12 +265,14 @@ impl Dfa {
             }
           }
         }
-        let id = ss.len() as u32;
-        let id = *ss.entry(tmp.clone()).or_insert_with(|| {
-          q.push_back(tmp.clone());
-          id
-        });
-        link.insert(k, id);
+        if tmp.any() {
+          let id = ss.len() as u32;
+          let id = *ss.entry(tmp.clone()).or_insert_with(|| {
+            q.push_back(tmp.clone());
+            id
+          });
+          link.insert(k, id);
+        }
       }
       const INVALID: u32 = !1 + 1;
       let mut min_id = INVALID;

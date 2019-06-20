@@ -43,24 +43,23 @@ impl IndentPrinter {
 }
 
 // made slight difference to char::escape_default
-// modify the printing form of \t \n \r ' ' , - to make them look better in a .dot file
 pub fn pretty_ch_display(ch: u8) -> &'static str {
     match ch {
         b'\t' => r"\\t",
         b'\n' => r"\\n",
         b'\r' => r"\\r",
         b' ' => "' '",
-        b'!' => "!",
-        b'\"' => "\\\"",
-        b'#' => "#",
-        b'$' => "$",
-        b'%' => "%",
-        b'&' => "&",
+        b'!' => "'!'",
+        b'\"' => r#"\""#,
+        b'#' => "'#'",
+        b'$' => "'$'",
+        b'%' => "'%'",
+        b'&' => "'&'",
         b'\'' => "\'",
-        b'(' => "(",
-        b')' => ")",
-        b'*' => "*",
-        b'+' => "+",
+        b'(' => "'('",
+        b')' => "')'",
+        b'*' => "'*'",
+        b'+' => "'+'",
         b',' => "','",
         b'-' => "'-'",
         b'.' => ".",
@@ -108,12 +107,12 @@ pub fn pretty_ch_display(ch: u8) -> &'static str {
         b'X' => "X",
         b'Y' => "Y",
         b'Z' => "Z",
-        b'[' => "[",
-        b'\\' => "\\",
-        b']' => "]",
-        b'^' => "^",
-        b'_' => "_",
-        b'`' => "`",
+        b'[' => "'['",
+        b'\\' => r"\\",
+        b']' => "']'",
+        b'^' => "'^'",
+        b'_' => "'_'",
+        b'`' => "'`'",
         b'a' => "a",
         b'b' => "b",
         b'c' => "c",
@@ -143,7 +142,7 @@ pub fn pretty_ch_display(ch: u8) -> &'static str {
         b'{' => "{",
         b'|' => "|",
         b'}' => "}",
-        b'~' => "~",
+        b'~' => "'~'",
         _ => panic!("not covered"),
     }
 }
@@ -158,14 +157,15 @@ pub fn pretty_chs_display(chs: &[u8]) -> String {
             while j + 1 < chs.len() && chs[j + 1] == chs[j] + 1 { j += 1; }
             if j <= i + 1 {
                 for i in i..=j {
-                    text += &format!("{},", pretty_ch_display(chs[i]));
+                    text += &format!("{}, ", pretty_ch_display(chs[i]));
                 }
             } else {
-                text += &format!("{}-{},", pretty_ch_display(chs[i]), pretty_ch_display(chs[j]));
+                text += &format!("{}-{}, ", pretty_ch_display(chs[i]), pretty_ch_display(chs[j]));
             }
             i = j + 1;
         }
     }
+    text.pop();
     text.pop();
     text
 }
