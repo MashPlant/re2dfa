@@ -7,7 +7,9 @@ extern crate print;
 use crate::re::Re;
 use crate::dfa::Dfa;
 use crate::nfa::Nfa;
+use crate::compress::ec_of_dfas;
 
+pub mod compress;
 pub mod re;
 pub mod nfa;
 pub mod dfa;

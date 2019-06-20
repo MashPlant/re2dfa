@@ -2,6 +2,7 @@ use crate::nfa::Nfa;
 use crate::bitset::BitSet;
 use print::{IndentPrinter, pretty_chs_display};
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::borrow::Borrow;
 
 type DfaNode = HashMap<u8, u32>;
 
@@ -215,10 +216,10 @@ impl Dfa {
   }
 
   // basically it is just like turning an nfa to an dfa
-  pub fn merge(xs: &[Dfa]) -> Dfa {
+  pub fn merge<D: Borrow<Dfa>>(dfas: &[D]) -> Dfa {
     let mut alphabet = HashSet::new();
-    for dfa in xs {
-      for node in &dfa.nodes {
+    for dfa in dfas {
+      for node in &dfa.borrow().nodes {
         for (&k, _) in &node.1 {
           alphabet.insert(k);
         }
@@ -228,10 +229,10 @@ impl Dfa {
     let mut n_nodes = Vec::new();
     let mut accept = HashMap::new();
     let mut begs = Vec::new();
-    for dfa in xs {
+    for dfa in dfas {
       let len = n_nodes.len() as u32;
       begs.push(len);
-      for (idx, node) in dfa.nodes.iter().enumerate() {
+      for (idx, node) in dfa.borrow().nodes.iter().enumerate() {
         if let Some(id) = node.0 {
           accept.insert(idx as u32 + len, id);
         }
