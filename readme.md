@@ -15,6 +15,11 @@ test decaf_re_set ... bench:     791,404 ns/iter (+/- 4,057)
 
 See folder 'benches' for more detail.
 
+## #[derive(Dfa)] 
+Add this to an enum, and proc macro will automatically generate a type named XXXLexer, where XXX is the enum name.
+
+This is mostly inspired by Logos, but I am not good at using proc macro now, so the code may seem silly.
+
 ## What does dfa looks like
 
 Here is an example of a simple grammar

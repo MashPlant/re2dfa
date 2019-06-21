@@ -1,0 +1,9 @@
+[package]
+name = "tests"
+version = "0.1.0"
+authors = ["MashPlant <740678788@qq.com>"]
+edition = "2018"
+
+[dependencies]
+re2dfa-derive = { path = "../re2dfa-derive" }
+re2dfa = { path = "../re2dfa" }

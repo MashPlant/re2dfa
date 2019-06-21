@@ -4,6 +4,8 @@ extern crate nom;
 extern crate bitset;
 extern crate print;
 
+use std::marker::PhantomData;
+
 pub mod compress;
 pub mod re;
 pub mod nfa;
@@ -17,4 +19,12 @@ pub fn re2dfa<I: IntoIterator<Item=S>, S: AsRef<str>>(res: I) -> Result<(dfa::Df
   let dfa = dfa::Dfa::merge(&dfas);
   let ec = compress::ec_of_dfas(&[&dfa]);
   Ok((dfa, ec))
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Token<'a, T> {
+  pub ty: T,
+  pub piece: &'a [u8],
+  pub line: u32,
+  pub col: u32,
 }

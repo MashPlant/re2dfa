@@ -333,8 +333,10 @@ mod dfa {
               return None;
             } else {
               // exec user defined function here
-              let piece = unsafe { std::slice::from_raw_parts(self.string.as_ptr(), i) };
-              self.string = unsafe { std::slice::from_raw_parts(self.string.as_ptr().add(i), self.string.len() - i) };
+              // let piece = unsafe { std::slice::from_raw_parts(self.string.as_ptr(), i) };
+              // self.string = unsafe { std::slice::from_raw_parts(self.string.as_ptr().add(i), self.string.len() - i) };
+              let piece = &self.string[..i];
+              self.string = &self.string[i..];
               if last_acc != _Eps {
                 return Some(Token { ty: last_acc, piece, line, col });
               } else {
