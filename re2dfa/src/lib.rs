@@ -4,12 +4,15 @@ extern crate nom;
 extern crate bitset;
 extern crate print;
 
-use std::marker::PhantomData;
-
 pub mod compress;
 pub mod re;
 pub mod nfa;
 pub mod dfa;
+
+pub use compress::*;
+pub use re::*;
+pub use nfa::*;
+pub use dfa::*;
 
 pub fn re2dfa<I: IntoIterator<Item=S>, S: AsRef<str>>(res: I) -> Result<(dfa::Dfa, [u8; 128]), String> {
   let mut dfas = Vec::new();
