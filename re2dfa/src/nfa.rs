@@ -1,7 +1,7 @@
 use crate::re::Re;
-use print::IndentPrinter;
 use std::collections::HashMap;
 use smallvec::SmallVec;
+use std::fmt::Write;
 
 type NfaNode = HashMap<u8, SmallVec<[u32; 4]>>;
 
@@ -87,22 +87,22 @@ impl Nfa {
   }
 
   pub fn print_dot(&self) -> String {
-    let mut p = IndentPrinter::new();
-    p.ln("digraph g {").inc();
+    let mut p = String::new();
+    let _ = writeln!(p, "digraph g {{");
     for (idx, node) in self.nodes.iter().enumerate() {
       for (&k, outs) in node {
         let k = if k == 0 { "ε".into() } else { (k as char).to_string() };
         for out in outs {
-          p.ln(format!(r#"{} -> {} [label="{}"];"#, idx, out, k));
+          let _ = writeln!(p, r#"{} -> {} [label="{}"];"#, idx, out, k);
         }
       }
       if idx == self.nodes.len() - 1 {
-        p.ln(format!(r#"{}[shape=doublecircle, label="{}"]"#, idx, idx));
+        let _ = writeln!(p, r#"{}[shape=doublecircle, label="{}"]"#, idx, idx);
       } else {
-        p.ln(format!(r#"{}[shape=circle, label="{}"]"#, idx, idx));
+        let _ = writeln!(p, r#"{}[shape=circle, label="{}"]"#, idx, idx);
       }
     }
-    p.dec().ln("}");
-    p.finish()
+    let _ = writeln!(p, "}}");
+    p
   }
 }

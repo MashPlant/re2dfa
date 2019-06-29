@@ -1,8 +1,8 @@
 use crate::nfa::Nfa;
 use crate::bitset::BitSet;
-use print::{IndentPrinter, pretty_chs_display};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::borrow::Borrow;
+use std::fmt::Write;
 
 type DfaNode = HashMap<u8, u32>;
 
@@ -82,8 +82,8 @@ impl Dfa {
   }
 
   pub fn print_dot(&self) -> String {
-    let mut p = IndentPrinter::new();
-    p.ln("digraph g {").inc();
+    let mut p = String::new();
+    let _ = writeln!(p, "digraph g {{");
     for (idx, node) in self.nodes.iter().enumerate() {
       let mut outs = HashMap::new();
       for (&k, &out) in &node.1 {
@@ -92,15 +92,15 @@ impl Dfa {
       // just make the graph look beautiful...
       for (out, mut edge) in outs {
         edge.sort_unstable();
-        p.ln(format!(r#"{} -> {} [label="{}"];"#, idx, out, pretty_chs_display(&edge)));
+        let _ = writeln!(p, r#"{} -> {} [label="{}"];"#, idx, out, print::pretty_chs_display(&edge));
       }
       match node.0 {
-        Some(id) => p.ln(format!(r#"{}[shape=doublecircle, label="{}\nacc:{}"]"#, idx, idx, id)),
-        None => p.ln(format!(r#"{}[shape=circle, label="{}"]"#, idx, idx)),
+        Some(id) => { let _ = writeln!(p, r#"{}[shape=doublecircle, label="{}\nacc:{}"]"#, idx, idx, id); }
+        None => { let _ = writeln!(p, r#"{}[shape=circle, label="{}"]"#, idx, idx); }
       };
     }
-    p.dec().ln("}");
-    p.finish()
+    let _ = writeln!(p, "}}");
+    p
   }
 
   pub fn minimize(&self) -> Dfa {
