@@ -1,5 +1,5 @@
 use crate::nfa::Nfa;
-use crate::bitset::BitSet;
+use bitset::BitSet;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::borrow::Borrow;
 use std::fmt::Write;

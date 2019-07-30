@@ -25,7 +25,7 @@ impl<'a> {{T}}Lexer<'a> {
 
     use {{T}}::*;
     static ACC: [{{T}}; {{DFA_SIZE}}] = [{{ACC}}];
-    static EC: [u8; 128] = [{{EC}}];
+    static EC: [u8; 256] = [{{EC}}];
     static EDGE: [[{{U_DFA_SIZE}}; {{EC_SIZE}}]; {{DFA_SIZE}}] = [{{DFA_EDGE}}];
     loop {
       if self.string.is_empty() {
@@ -37,7 +37,7 @@ impl<'a> {{T}}Lexer<'a> {
       let mut i = 0;
       while i < self.string.len() {
         let ch = index!(self.string, i);
-        let ec = index!(EC, ch & 0x7F);
+        let ec = index!(EC, ch);
         let nxt = index!(index!(EDGE, state), ec);
         let acc = index!(ACC, nxt);
         last_acc = if acc != {{EOF}} { acc } else { last_acc };

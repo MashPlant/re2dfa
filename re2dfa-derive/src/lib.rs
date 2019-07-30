@@ -1,7 +1,4 @@
 extern crate proc_macro;
-extern crate syn;
-extern crate re2dfa;
-extern crate aho_corasick;
 
 use proc_macro::TokenStream;
 use syn::{ItemEnum, Fields, Meta, Lit};
@@ -103,7 +100,7 @@ pub fn dfa(input: TokenStream) -> TokenStream {
 
   let (dfa, ec) = re2dfa::re2dfa(res.iter().map(|(re, _)| re)).expect("Invalid re.");
   let mut ch2ec = String::new();
-  for ch in 0..128 {
+  for ch in 0..256 {
     let _ = write!(ch2ec, "{}, ", ec[ch]);
   }
   let u_dfa_size = (match dfa.nodes.len() {

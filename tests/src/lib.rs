@@ -1,6 +1,4 @@
-#[macro_use]
-extern crate re2dfa_derive;
-extern crate re2dfa;
+use re2dfa_derive::Dfa;
 
 //#[test]
 fn foo() {

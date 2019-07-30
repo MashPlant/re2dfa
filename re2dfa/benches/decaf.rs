@@ -1,8 +1,5 @@
 #![feature(test)]
-extern crate test;
-#[macro_use]
-extern crate lazy_static;
-extern crate regex;
+use lazy_static::lazy_static;
 
 use test::Bencher;
 
@@ -323,7 +320,7 @@ mod dfa {
         while i < self.string.len() {
           // '\0' should not be in alphabet
           let ch = unsafe { *self.string.get_unchecked(i) };
-          let &ec = unsafe { CH2EC.get_unchecked((ch & 0x7F) as usize) };
+          let &ec = unsafe { CH2EC.get_unchecked(ch as usize) };
           let &nxt = unsafe { EDGE.get_unchecked(state as usize).get_unchecked(ec as usize) };
           let &acc = unsafe { ACC.get_unchecked(nxt as usize) };
           last_acc = if acc != _Eof { acc } else { last_acc };
