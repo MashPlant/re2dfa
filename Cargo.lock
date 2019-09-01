@@ -173,14 +173,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tests"
-version = "0.1.0"
-dependencies = [
- "re2dfa 1.0.0",
- "re2dfa-derive 0.1.0",
-]
-
-[[package]]
 name = "thread_local"
 version = "0.3.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"

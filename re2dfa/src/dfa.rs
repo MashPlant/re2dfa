@@ -274,16 +274,10 @@ impl Dfa {
           link.insert(k, id);
         }
       }
-      const INVALID: u32 = !1 + 1;
-      let mut min_id = INVALID;
-      for i in 0..n_nodes.len() {
-        if unsafe { cur.test_unchecked(i) } {
-          if let Some(&id) = accept.get(&(i as u32)) {
-            min_id = min_id.min(id);
-          }
-        }
-      }
-      nodes.push((if min_id != INVALID { Some(min_id) } else { None }, link));
+      let acc = (0..n_nodes.len()).filter_map(|i| unsafe {
+        accept.get(&(i as u32)).and_then(|x| if cur.test_unchecked(i) { Some(*x) } else { None })
+      }).min();
+      nodes.push((acc, link));
     }
     Dfa { nodes }
   }

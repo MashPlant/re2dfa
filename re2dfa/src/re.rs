@@ -42,7 +42,7 @@ fn parse_atom<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Re, E>
     map(tag(r"\?"), |_| Re::Ch(b'?')),
     map(tag(r"\d"), |_| Re::Disjunction((b'0'..=b'9').map(|it| Re::Ch(it)).collect())),
     map(tag(r"\s"), |_| Re::Disjunction("\t\n\r ".bytes().map(|it| Re::Ch(it)).collect())),
-    map(tag(r"."), |_| Re::Disjunction((0..=127).map(|it| Re::Ch(it)).collect())),
+    map(tag(r"."), |_| Re::Disjunction((0..=255).map(|it| Re::Ch(it)).collect())),
     preceded(tag(r"\"), map(cut(one_of(META)), |ch| Re::Ch(ch as u8))),
     preceded(char('('), cut(terminated(parse_re, char(')')))),
     parse_range,
@@ -104,7 +104,7 @@ fn parse_range<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Re, E
   }
   preceded(tag("["), cut(terminated(alt((
     map(preceded(tag("^"), cut(ranges!())), |range| {
-      Re::Disjunction((0..=127).filter(|x| !range.contains(x)).map(|it| Re::Ch(it)).collect())
+      Re::Disjunction((0..=255).filter(|x| !range.contains(x)).map(|it| Re::Ch(it)).collect())
     }),
     map(ranges!(), |range| {
       let mut range = range.into_iter().collect::<Vec<_>>();
