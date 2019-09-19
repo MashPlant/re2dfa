@@ -3,9 +3,11 @@ use std::collections::HashMap;
 use smallvec::SmallVec;
 use std::fmt::Write;
 
-type NfaNode = HashMap<u8, SmallVec<[u32; 4]>>;
+// Option<u8>, Some for a char, None for eps
+type NfaNode = HashMap<Option<u8>, SmallVec<[u32; 4]>>;
 
 // start state should be 0, end state should be (nodes.len() - 1) as u32
+// a valid Nfa should have nodes.len() >= 2
 #[derive(Debug)]
 pub struct Nfa {
   pub nodes: Vec<NfaNode>,
@@ -16,9 +18,14 @@ impl Nfa {
   // this can tremendously increase the speed of nfa -> dfa(about 10 times)
   pub fn from_re(re: &Re) -> Nfa {
     match re {
+      Re::Eps => {
+        let mut node0 = HashMap::new();
+        node0.insert(None, smallvec![1]); // eps
+        Nfa { nodes: vec![node0, HashMap::new()] }
+      }
       &Re::Ch(c) => {
         let mut node0 = HashMap::new();
-        node0.insert(c, smallvec![1]);
+        node0.insert(Some(c), smallvec![1]);
         Nfa { nodes: vec![node0, HashMap::new()] }
       }
       Re::Concat(c) => {
@@ -60,7 +67,7 @@ impl Nfa {
               }
             }
           }
-          all.nodes[0].entry(0).or_insert_with(|| smallvec![]).push(len);
+          all.nodes[0].entry(None).or_insert_with(|| smallvec![]).push(len);
           all.nodes.append(&mut sub.nodes);
         }
         all.nodes.push(HashMap::new());
@@ -77,8 +84,8 @@ impl Nfa {
             }
           }
         }
-        all.nodes[0].insert(0, smallvec![1, end]);
-        sub.nodes.last_mut().unwrap().insert(0, smallvec![1, end]);
+        all.nodes[0].insert(None, smallvec![1, end]);
+        sub.nodes.last_mut().unwrap().insert(None, smallvec![1, end]);
         all.nodes.append(&mut sub.nodes);
         all.nodes.push(HashMap::new());
         all
@@ -91,7 +98,7 @@ impl Nfa {
     let _ = writeln!(p, "digraph g {{");
     for (idx, node) in self.nodes.iter().enumerate() {
       for (&k, outs) in node {
-        let k = if k == 0 { "ε".into() } else { (k as char).to_string() };
+        let k = if let Some(k) = k { (k as char).to_string() } else { "ε".into() };
         for out in outs {
           let _ = writeln!(p, r#"{} -> {} [label="{}"];"#, idx, out, k);
         }

@@ -1,59 +1,49 @@
-use nom::{
-  branch::alt,
-  bytes::complete::tag,
-  character::complete::{char, one_of},
-  combinator::{map, cut},
-  error::{convert_error, ErrorKind, ParseError, VerboseError},
-  multi::separated_list,
-  sequence::{preceded, terminated},
-  bytes::complete::take_while_m_n,
-  character::complete::anychar,
-  multi::many1,
-  sequence::tuple,
-  Err, IResult,
-};
+use nom::{branch::alt, bytes::complete::tag, character::complete::{char, one_of}, combinator::{map, cut}, error::{convert_error, ErrorKind, ParseError, VerboseError}, multi::separated_list, sequence::{preceded, terminated}, bytes::complete::take_while_m_n, character::complete::anychar, multi::many1, sequence::tuple, Err, IResult};
 use std::collections::HashSet;
 use std::str;
 
 // theoretically Concat & Disjunction only need 2 children
 // but use a Vec here can make future analysis faster
-
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Re {
+  Eps,
   Ch(u8),
   Concat(Vec<Re>),
   Disjunction(Vec<Re>),
   Kleene(Box<Re>),
 }
 
-// out simple re doesn't support {n},^,$,?, but still them as meta chars
+// our simple re doesn't support {n},^,$, but still them as meta chars
 const META: &'static str = r"()[].|*+\{}^$?";
 
-fn parse_atom<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Re, E> {
+fn atom<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Re, E> {
   alt((
     map(take_while_m_n(1, 1, |ch| !META.contains(ch)), |s: &'a str| Re::Ch(s.as_bytes()[0])),
     map(tag(r"\n"), |_| Re::Ch(b'\n')),
     map(tag(r"\r"), |_| Re::Ch(b'\r')),
     map(tag(r"\t"), |_| Re::Ch(b'\t')),
-    map(tag(r"\{"), |_| Re::Ch(b'{')), 
+    map(tag(r"\{"), |_| Re::Ch(b'{')),
     map(tag(r"\}"), |_| Re::Ch(b'}')),
     map(tag(r"\^"), |_| Re::Ch(b'^')),
     map(tag(r"\$"), |_| Re::Ch(b'$')),
     map(tag(r"\?"), |_| Re::Ch(b'?')),
     map(tag(r"\d"), |_| Re::Disjunction((b'0'..=b'9').map(|it| Re::Ch(it)).collect())),
+    map(tag(r"\w"), |_| Re::Disjunction((b'0'..=b'9').chain(b'a'..=b'z').chain(b'A'..=b'Z').chain(Some(b'_'))
+      .map(|it| Re::Ch(it)).collect())),
     map(tag(r"\s"), |_| Re::Disjunction("\t\n\r ".bytes().map(|it| Re::Ch(it)).collect())),
     map(tag(r"."), |_| Re::Disjunction((0..=255).map(|it| Re::Ch(it)).collect())),
     preceded(tag(r"\"), map(cut(one_of(META)), |ch| Re::Ch(ch as u8))),
-    preceded(char('('), cut(terminated(parse_re, char(')')))),
-    parse_range,
+    preceded(char('('), cut(terminated(re, char(')')))),
+    range,
   ))(i)
 }
 
-fn parse_atom_or_kleene<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Re, E> {
+fn atom_with_suffix<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Re, E> {
   alt((
-    map(terminated(parse_atom, tag("*")), |a| Re::Kleene(Box::new(a))),
-    map(terminated(parse_atom, tag("+")), |a| Re::Concat(vec![a.clone(), Re::Kleene(Box::new(a))])),
-    parse_atom,
+    map(terminated(atom, tag("*")), |a| Re::Kleene(Box::new(a))),
+    map(terminated(atom, tag("+")), |a| Re::Concat(vec![a.clone(), Re::Kleene(Box::new(a))])),
+    map(terminated(atom, tag("?")), |a| Re::Disjunction(vec![Re::Eps, a])),
+    atom,
   ))(i)
 }
 
@@ -84,7 +74,7 @@ fn ascii_bracket<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, u8,
   }
 }
 
-fn parse_range<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Re, E> {
+fn range<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Re, E> {
   // why this is not Copy???
   macro_rules! ranges {
     () => {
@@ -114,27 +104,27 @@ fn parse_range<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Re, E
   )), tag("]"))))(i)
 }
 
-fn parse_concat<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Vec<Re>, E> {
-  many1(parse_atom_or_kleene)(i)
+fn concat<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Vec<Re>, E> {
+  many1(atom_with_suffix)(i)
 }
 
-fn parse_disjunction<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Vec<Re>, E> {
+fn disjunction<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Vec<Re>, E> {
   // eliminate left recursion???
-  let x = terminated(parse_concat, tag("|"))(i)?;
-  let mut xs = separated_list(tag("|"), parse_re)(x.0)?;
+  let x = terminated(concat, tag("|"))(i)?;
+  let mut xs = separated_list(tag("|"), re)(x.0)?;
   xs.1.push(Re::Concat(x.1));
   Ok((xs.0, xs.1))
 }
 
-fn parse_re<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Re, E> {
+fn re<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Re, E> {
   alt((
-    map(parse_disjunction, Re::Disjunction),
-    map(parse_concat, Re::Concat),
+    map(disjunction, Re::Disjunction),
+    map(concat, Re::Concat),
   ))(i)
 }
 
 pub fn parse(i: &str) -> Result<Re, String> {
-  let result = parse_re::<VerboseError<&str>>(i);
+  let result = re::<VerboseError<&str>>(i);
   match result {
     Ok(("", result)) => Ok(result),
     Ok((remain, _)) => Err(format!("The remaining part cannot be parser: `{}`.", remain)),

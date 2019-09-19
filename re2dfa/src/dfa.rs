@@ -20,7 +20,7 @@ impl Dfa {
       for (i, edges) in nfa.nodes.iter().enumerate() {
         unsafe {
           if bs.test_unchecked(i) {
-            if let Some(eps) = edges.get(&0) {
+            if let Some(eps) = edges.get(&None) {
               for &out in eps {
                 changed |= !(bs.test_unchecked(out as usize));
                 bs.set_unchecked(out as usize);
@@ -42,7 +42,7 @@ impl Dfa {
         alphabet.insert(k);
       }
     }
-    alphabet.remove(&0);
+    alphabet.remove(&None);
     let alphabet = alphabet.into_iter().collect::<Vec<_>>();
     let mut bs = BitSet::new(nfa.nodes.len());
     bs.set(0);
@@ -56,11 +56,12 @@ impl Dfa {
     while let Some(cur) = q.pop_front() {
       let mut link = HashMap::new();
       for &k in &alphabet {
+        let k = k.unwrap(); // it is safe, because we removed `None` in `alphabet`
         tmp.clear_all();
         for (i, edges) in nfa.nodes.iter().enumerate() {
           unsafe {
             if cur.test_unchecked(i) {
-              if let Some(outs) = edges.get(&k) {
+              if let Some(outs) = edges.get(&Some(k)) {
                 for &out in outs {
                   tmp.set_unchecked(out as usize);
                 }
