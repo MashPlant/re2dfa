@@ -112,14 +112,13 @@ impl Dfa {
         rev_edges[out as usize].entry(k).or_insert_with(|| Vec::new()).push(i as u32);
       }
     }
-    let mut dp = BitSet::new(n * n); // only access lower part
+    let mut dp = BitSet::new(n * n); // only access upper part, i.e., should guarantee i < j if access it with i * n + j
     let mut q = VecDeque::new();
     for (i, (id1, _)) in self.nodes.iter().enumerate() {
-      for (j, (id2, _)) in self.nodes.iter().take(i).enumerate() {
+      for (j, (id2, _)) in self.nodes.iter().skip(i).enumerate() {
+        let j = i + j; // the real index (compensate for `skip(i)`)
         if id1 != id2 {
-          unsafe {
-            dp.set_unchecked(i * n + j);
-          }
+          unsafe { dp.set_unchecked(i * n + j); }
           q.push_back((i as u32, j as u32));
         }
       }
@@ -130,7 +129,7 @@ impl Dfa {
         if let Some(out_j) = rev_j.get(k_i) {
           for &ii in out_i {
             for &jj in out_j {
-              let (ii, jj) = if ii < jj { (jj, ii) } else { (ii, jj) };
+              let (ii, jj) = if ii < jj { (ii, jj) } else { (jj, ii) };
               unsafe {
                 if !dp.test_unchecked(ii as usize * n + jj as usize) {
                   dp.set_unchecked(ii as usize * n + jj as usize);
@@ -142,83 +141,54 @@ impl Dfa {
         }
       }
     }
-//    you can remove the comments and check the equivalent relation
-//    println!();
-//    for i in 0..n {
-//      print!("{} ", i);
-//      for j in 0..n {
-//        if dp.test(i * n + j) {
-//          print!("X ");
-//        } else {
-//          print!("  ");
-//        }
-//      }
-//      println!()
-//    }
-//    print!("  ");
-//    for i in 0..n {
-//      print!("{} ", i);
-//    }
-//    println!("\n");
 
-    const INVALID: u32 = !1 + 1;
-    let mut vis = vec![INVALID; n];
-    let mut q = VecDeque::new();
-    let mut id2old = Vec::new();
+    const INVALID: u32 = !0;
+    let mut ids = vec![INVALID; n];
+    let mut q = VecDeque::with_capacity(n);
+    let mut id2old = Vec::with_capacity(n);
     let dead_node = (0..n).find(|&i| {
-      if self.nodes[i].0.is_some() {
-        return false;
-      } else {
-        for (_, &out) in &self.nodes[i].1 {
-          if out != i as u32 {
-            return false;
-          }
-        }
-        return true;
-      }
+      // not accept state and no out edge
+      self.nodes[i].0.is_none() && self.nodes[i].1.iter().all(|(_, &out)| out == i as u32)
     });
-    for i in (0..n).rev() {
-      if Some(i) != dead_node && vis[i] == INVALID {
+    for i in 0..n {
+      if dead_node != Some(i) && ids[i] == INVALID {
         let id = id2old.len() as u32;
-        vis[i] = id;
+        ids[i] = id;
         q.push_back(i);
-        id2old.push(vec![i as u32]);
+        let mut old = vec![i as u32];
         while let Some(cur) = q.pop_front() {
-          for j in 0..cur {
-            if vis[j] == INVALID {
-              unsafe {
-                if !dp.test_unchecked(cur * n + j) {
-                  vis[j] = id;
-                  q.push_back(j);
-                  id2old.get_unchecked_mut(id as usize).push(j as u32);
-                }
+          for j in cur..n {
+            if ids[j] == INVALID {
+              if unsafe { !dp.test_unchecked(cur * n + j) } {
+                ids[j] = id;
+                q.push_back(j);
+                old.push(j as u32);
               }
             }
           }
         }
+        id2old.push(old);
       }
     }
-    id2old.reverse();
 
-    let new_len = id2old.len() as u32;
     let mut nodes = Vec::new();
     for old in id2old {
       let mut link = HashMap::new();
-      let id = self.nodes[old[0] as usize].0;
+      let acc = self.nodes[old[0] as usize].0; // they must have the same acc, so pick the acc of 0
       for o in old {
         for (&k, &out) in &self.nodes[o as usize].1 {
-          if Some(out as usize) != dead_node {
-            link.insert(k, new_len - 1 - vis[out as usize]);
+          if dead_node != Some(out as usize) {
+            link.insert(k, ids[out as usize]);
           }
         }
       }
-      nodes.push((id, link));
+      nodes.push((acc, link));
     }
     Dfa { nodes }
   }
 
   // basically it is just like turning an nfa to an dfa
-  // note that the generated dfa is already minimized, and contains no dead state
+  // the return dfa is minimized and contains no dead state if input `dfas` are all minimized and contain no dead state
   pub fn merge<D: Borrow<Dfa>>(dfas: &[D]) -> Dfa {
     let mut alphabet = HashSet::new();
     for dfa in dfas {

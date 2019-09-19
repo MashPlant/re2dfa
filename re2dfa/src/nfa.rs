@@ -97,11 +97,20 @@ impl Nfa {
     let mut p = String::new();
     let _ = writeln!(p, "digraph g {{");
     for (idx, node) in self.nodes.iter().enumerate() {
-      for (&k, outs) in node {
-        let k = if let Some(k) = k { (k as char).to_string() } else { "ε".into() };
-        for out in outs {
-          let _ = writeln!(p, r#"{} -> {} [label="{}"];"#, idx, out, k);
+      let mut outs = HashMap::new();
+      for (&k, out) in node {
+        for &out in out {
+          if let Some(k) = k {
+            outs.entry(out).or_insert_with(|| Vec::new()).push(k);
+          } else {
+            let _ = writeln!(p, r#"{} -> {} [label="ε"];"#, idx, out);
+          }
         }
+      }
+      // just make the graph look beautiful...
+      for (out, mut edge) in outs {
+        edge.sort_unstable();
+        let _ = writeln!(p, r#"{} -> {} [label="{}"];"#, idx, out, print::pretty_chs_display(&edge));
       }
       if idx == self.nodes.len() - 1 {
         let _ = writeln!(p, r#"{}[shape=doublecircle, label="{}"]"#, idx, idx);

@@ -11,16 +11,16 @@ pub use re::*;
 pub use nfa::*;
 pub use dfa::*;
 
-pub fn re2dfa<I: IntoIterator<Item=S>, S: AsRef<str>>(res: I) -> Result<(dfa::Dfa, [u8; 256]), (usize, String)> {
+pub fn re2dfa<I: IntoIterator<Item=S>, S: AsRef<str>>(res: I) -> Result<(Dfa, [u8; 256]), (usize, String)> {
   let mut dfas = Vec::new();
   for (id, re) in res.into_iter().enumerate() {
-    match re::parse(re.as_ref()) {
-      Ok(re) => dfas.push(dfa::Dfa::from_nfa(&nfa::Nfa::from_re(&re), id as u32).minimize()),
+    match parse(re.as_ref()) {
+      Ok(re) => dfas.push(Dfa::from_nfa(&Nfa::from_re(&re), id as u32).minimize()),
       Err(err) => return Err((id, err)),
     }
   }
-  let dfa = dfa::Dfa::merge(&dfas);
-  let ec = compress::ec_of_dfas(&[&dfa]);
+  let dfa = Dfa::merge(&dfas);
+  let ec = ec_of_dfas(&[&dfa]);
   Ok((dfa, ec))
 }
 

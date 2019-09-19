@@ -1,6 +1,5 @@
-use nom::{branch::alt, bytes::complete::tag, character::complete::{char, one_of}, combinator::{map, cut}, error::{convert_error, ErrorKind, ParseError, VerboseError}, multi::separated_list, sequence::{preceded, terminated}, bytes::complete::take_while_m_n, character::complete::anychar, multi::many1, sequence::tuple, Err, IResult};
-use std::collections::HashSet;
-use std::str;
+use nom::{branch::alt, bytes::complete::{tag, take_while1}, character::complete::{char, one_of, anychar}, combinator::{map, cut}, error::{convert_error, ErrorKind, ParseError, VerboseError}, multi::{separated_list, many1}, sequence::{preceded, terminated, tuple}, Err, IResult};
+use std::{collections::HashSet, str};
 
 // theoretically Concat & Disjunction only need 2 children
 // but use a Vec here can make future analysis faster
@@ -14,11 +13,14 @@ pub enum Re {
 }
 
 // our simple re doesn't support {n},^,$, but still them as meta chars
-const META: &'static str = r"()[].|*+\{}^$?";
+const META: &str = r"()[].|*+\{}^$?";
 
 fn atom<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Re, E> {
   alt((
-    map(take_while_m_n(1, 1, |ch| !META.contains(ch)), |s: &'a str| Re::Ch(s.as_bytes()[0])),
+    map(take_while1(|ch| !META.contains(ch)), |s: &'a str| {
+      let s = s.as_bytes();
+      if s.len() == 1 { Re::Ch(s[0]) } else { Re::Concat(s.iter().map(|ch| Re::Ch(*ch)).collect()) }
+    }),
     map(tag(r"\n"), |_| Re::Ch(b'\n')),
     map(tag(r"\r"), |_| Re::Ch(b'\r')),
     map(tag(r"\t"), |_| Re::Ch(b'\t')),
