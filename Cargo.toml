@@ -6,7 +6,15 @@ edition = "2018"
 
 [dependencies]
 smallvec = "0.6.9"
-# it seems nom = "5" won't work
-nom = "5.0.0-beta2"
+nom = "5.0"
 bitset = { git = "https://github.com/MashPlant/bitset" }
 print = { path = "src/print" }
+
+[dev-dependencies]
+clap = "2.33.0"
+
+[lib]
+path = 'src/lib.rs'
+
+[[example]]
+name = 'show_fa'

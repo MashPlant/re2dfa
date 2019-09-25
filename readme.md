@@ -6,7 +6,27 @@ Now only the core components of re2dfa are left. The process of how re2dfa works
 
 The goal of re2dfa is to convert a set of regexes into a dfa that can be used in the implementation of a compiler's lexer. The effect of this dfa is equivalent to: use all the regexes to match the input string successively, select the one with the longest match result as the result; if there are multiple results with the same length, select the first regex in these results.
 
-In addition to this core function, the only remaining feature that has no practical use is to print the graphics of nfa or dfa to a `dot` file.
+In addition to this core function, the only remaining feature that has no practical use is to print the graphics of nfa or dfa to a `dot` file. An executable named `show_fa` is provided, you can run it with:
+
+```bash
+$ cargo run --example show_fa -- --help
+```
+
+Or run an specific example, this regex match all strings consisting of alternating 0 and 1:
+
+```bash
+ cargo run --example show_fa -- '0?(10)*1?' --nfa 'a.dot' --raw_dfa 'b.dot' --dfa 'c.dot'
+```
+
+The images in `a.dot`, `b.dot` and `c.dot` may look like the following 3 images (for better display effect on this website, I rendered them in the horizontal direction):
+
+![](pic/a.png)
+
+![](pic/b.png)
+
+![](pic/c.png)
+
+Note that in the second image, state 3 is a dead state, which removed in the minimization of dfa.
 
 # Regex
 
