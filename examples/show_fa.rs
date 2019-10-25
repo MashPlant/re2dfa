@@ -11,7 +11,7 @@ fn main() -> io::Result<()> {
     .get_matches();
   let input = m.value_of("input").unwrap();
   let re = parse(input).unwrap_or_else(|e| {
-    eprintln!("Invalid regex `{}`: {}", input, e);
+    eprintln!("Invalid regex {:?}: {}", input, e);
     process::exit(1);
   });
   let nfa = Nfa::from_re(&re);

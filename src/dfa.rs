@@ -7,6 +7,7 @@ use std::fmt::Write;
 type DfaNode = HashMap<u8, u32>;
 
 // nodes[i].0 stands for node state(whether is terminal, and which nfa it belongs)
+// a valid Dfa should have nodes.len() >= 1
 #[derive(Debug)]
 pub struct Dfa {
   pub nodes: Vec<(Option<u32>, DfaNode)>,
@@ -144,12 +145,15 @@ impl Dfa {
 
     const INVALID: u32 = !0;
     let mut ids = vec![INVALID; n];
-    let mut q = VecDeque::with_capacity(n);
     let mut id2old = Vec::with_capacity(n);
-    let dead_node = (0..n).find(|&i| {
-      // not accept state and no out edge
-      self.nodes[i].0.is_none() && self.nodes[i].1.iter().all(|(_, &out)| out == i as u32)
-    });
+    let mut q = VecDeque::with_capacity(n);
+    // if there is no node, we can't delete this node, this is the requirement of Dfa (nodes/len() >= 1)
+    let dead_node = if n == 1 { None } else {
+      (0..n).find(|&i| {
+        // not accept state and no out edge
+        self.nodes[i].0.is_none() && self.nodes[i].1.iter().all(|(_, &out)| out == i as u32)
+      })
+    };
     for i in 0..n {
       if dead_node != Some(i) && ids[i] == INVALID {
         let id = id2old.len() as u32;
