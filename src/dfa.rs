@@ -37,6 +37,7 @@ impl Dfa {
 impl Dfa {
   // the generated dfa contains a dead state, which will be of help in minimizing it
   pub fn from_nfa(nfa: &Nfa, id: u32) -> Dfa {
+    assert!(nfa.nodes.len() >= 2);
     let mut alphabet = HashSet::new();
     for edges in &nfa.nodes {
       for (&k, _) in edges {
@@ -106,6 +107,7 @@ impl Dfa {
   }
 
   pub fn minimize(&self) -> Dfa {
+    assert!(self.nodes.len() >= 1);
     let n = self.nodes.len();
     let mut rev_edges = vec![HashMap::new(); n];
     for (i, (_, edges)) in self.nodes.iter().enumerate() {
@@ -147,7 +149,7 @@ impl Dfa {
     let mut ids = vec![INVALID; n];
     let mut id2old = Vec::with_capacity(n);
     let mut q = VecDeque::with_capacity(n);
-    // if there is no node, we can't delete this node, this is the requirement of Dfa (nodes/len() >= 1)
+    // if there is no node, we can't delete this node, this is the requirement of Dfa (nodes.len() >= 1)
     let dead_node = if n == 1 { None } else {
       (0..n).find(|&i| {
         // not accept state and no out edge
@@ -196,6 +198,7 @@ impl Dfa {
   pub fn merge<D: Borrow<Dfa>>(dfas: &[D]) -> Dfa {
     let mut alphabet = HashSet::new();
     for dfa in dfas {
+      assert!(dfa.borrow().nodes.len() >= 1);
       for node in &dfa.borrow().nodes {
         for (&k, _) in &node.1 {
           alphabet.insert(k);

@@ -13,6 +13,8 @@ pub enum Re {
 }
 
 use Re::*;
+use nom::bytes::complete::take_while_m_n;
+use nom::combinator::map_opt;
 
 // our simple re doesn't support {n},^,$, but still them as meta chars
 const META: &str = r"()[].|*+\{}^$?";
@@ -26,12 +28,13 @@ fn escaped_ascii<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, u8,
     map(tag(r"\n"), |_| b'\n'),
     map(tag(r"\t"), |_| b'\t'),
     map(tag(r"\r"), |_| b'\r'),
+    map(preceded(tag(r"\x"), take_while_m_n(2, 2, |ch: char| ch.is_digit(16))), |s| u8::from_str_radix(s, 16).unwrap()),
   ))(i)
 }
 
 fn atom<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Re, E> {
   alt((
-    map(none_of(META), |ch| Concat(ch.encode_utf8(&mut [0; 4]).bytes().map(|ch| Ch(ch)).collect())),
+    map(none_of(META), |ch| if ch.len_utf8() == 1 { Ch(ch as u8) } else { Concat(ch.encode_utf8(&mut [0; 4]).bytes().map(|ch| Ch(ch)).collect()) }),
     map(escaped_ascii, |ch| Ch(ch)),
     map(tag(r"\d"), |_| Disjunction((b'0'..=b'9').map(|ch| Ch(ch)).collect())),
     map(tag(r"\w"), |_| Disjunction((b'0'..=b'9').chain(b'a'..=b'z').chain(b'A'..=b'Z').chain(Some(b'_')).map(|ch| Ch(ch)).collect())),
@@ -53,17 +56,18 @@ fn atom_with_suffix<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, 
 }
 
 // meta characters are not escaped here, but other normal ascii escape chars and [] are
+// multi-byte char is not supported in []
 fn ascii_no_bracket<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, u8, E> {
   alt((
     map(tag(r"\["), |_| b'['),
     map(tag(r"\]"), |_| b']'),
     escaped_ascii,
-    map(none_of(r"\[]"), |ch| ch as u8),
+    map_opt(none_of(r"\[]"), |ch| if ch.len_utf8() == 1 { Some(ch as u8) } else { None }),
   ))(i)
 }
 
 fn range<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Re, E> {
-  // Fn doesn't implement Clone, so can't store the result to a variable and use ch twice
+  // Fn doesn't implement Clone, so can't store the result to a variable and use it twice
   macro_rules! ranges {
     () => {
       cut(map(many1(alt((
@@ -79,8 +83,8 @@ fn range<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Re, E> {
 }
 
 fn re<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Re, E> {
-  let (i, mut disjunction) = separated_list(char('|'), map(many1(atom_with_suffix), Concat))(i)?;
-  Ok((i, match disjunction.len() { 0 => Eps, 1 => disjunction.swap_remove(0), _ => Disjunction(disjunction) }))
+  let (i, disjunction) = separated_list(char('|'), map(many1(atom_with_suffix), Concat))(i)?;
+  Ok((i, match disjunction.len() { 0 => Eps, 1 => disjunction.into_iter().next().unwrap(), _ => Disjunction(disjunction) }))
 }
 
 pub fn parse(i: &str) -> Result<Re, String> {

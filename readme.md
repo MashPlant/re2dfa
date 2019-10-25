@@ -37,6 +37,7 @@ re2dfa supports a subset of regex, here are a few points that fail to meet the r
 3. only greedy matching is supported
 4. although `\s`,`\d`,`\w` are supported,`\S`,`\D`,`\W` are not
 5. `.` match all characters,instead of all characters except `\n`
+6. doesn't support multi-byte character inside `[]`
 
 There is no guarantee that all other standards in regex are properly implemented, either.
 
