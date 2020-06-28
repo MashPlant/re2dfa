@@ -5,13 +5,13 @@ authors = ["MashPlant <740678788@qq.com>"]
 edition = "2018"
 
 [dependencies]
-smallvec = "0.6.9"
-nom = "5.0"
+smallvec = { version = "*", features = ["union"] }
+nom = "*"
 bitset = { git = "https://github.com/MashPlant/bitset" }
 print = { path = "src/print" }
 
 [dev-dependencies]
-clap = "2.33.0"
+clap = "*"
 
 [lib]
 path = 'src/lib.rs'
