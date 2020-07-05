@@ -8,13 +8,7 @@ edition = "2018"
 smallvec = { version = "*", features = ["union"] }
 nom = "*"
 bitset = { git = "https://github.com/MashPlant/bitset" }
-print = { path = "src/print" }
+pretty_u8 = { git = "https://github.com/MashPlant/pretty_u8" }
 
 [dev-dependencies]
 clap = "*"
-
-[lib]
-path = 'src/lib.rs'
-
-[[example]]
-name = 'show_fa'

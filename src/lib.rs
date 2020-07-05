@@ -1,10 +1,8 @@
-#[macro_use]
-extern crate smallvec;
-
 pub mod compress;
 pub mod re;
 pub mod nfa;
 pub mod dfa;
+pub mod print;
 
 pub use compress::*;
 pub use re::*;

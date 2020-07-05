@@ -1,7 +1,6 @@
 use crate::re::Re;
 use std::collections::HashMap;
-use smallvec::SmallVec;
-use std::fmt::Write;
+use smallvec::{SmallVec, smallvec};
 
 // Option<u8>, Some for a char, None for eps
 type NfaNode = HashMap<Option<u8>, SmallVec<[u32; 4]>>;
@@ -91,34 +90,5 @@ impl Nfa {
         all
       }
     }
-  }
-
-  pub fn print_dot(&self) -> String {
-    let mut p = String::new();
-    let _ = writeln!(p, "digraph g {{");
-    for (idx, node) in self.nodes.iter().enumerate() {
-      let mut outs = HashMap::new();
-      for (&k, out) in node {
-        for &out in out {
-          if let Some(k) = k {
-            outs.entry(out).or_insert_with(|| Vec::new()).push(k);
-          } else {
-            let _ = writeln!(p, r#"{} -> {} [label="ε"];"#, idx, out);
-          }
-        }
-      }
-      // just make the graph look beautiful...
-      for (out, mut edge) in outs {
-        edge.sort_unstable();
-        let _ = writeln!(p, r#"{} -> {} [label="{}"];"#, idx, out, print::pretty_chs_display(&edge));
-      }
-      if idx == self.nodes.len() - 1 {
-        let _ = writeln!(p, r#"{}[shape=doublecircle, label="{}"]"#, idx, idx);
-      } else {
-        let _ = writeln!(p, r#"{}[shape=circle, label="{}"]"#, idx, idx);
-      }
-    }
-    let _ = writeln!(p, "}}");
-    p
   }
 }

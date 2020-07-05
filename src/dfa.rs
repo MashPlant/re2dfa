@@ -2,7 +2,6 @@ use crate::nfa::Nfa;
 use bitset::BitSet;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::borrow::Borrow;
-use std::fmt::Write;
 
 type DfaNode = HashMap<u8, u32>;
 
@@ -82,28 +81,6 @@ impl Dfa {
       nodes.push((if cur.test(nfa.nodes.len() - 1) { Some(id) } else { None }, link));
     }
     Dfa { nodes }
-  }
-
-  pub fn print_dot(&self) -> String {
-    let mut p = String::new();
-    let _ = writeln!(p, "digraph g {{");
-    for (idx, node) in self.nodes.iter().enumerate() {
-      let mut outs = HashMap::new();
-      for (&k, &out) in &node.1 {
-        outs.entry(out).or_insert_with(|| Vec::new()).push(k);
-      }
-      // just make the graph look beautiful...
-      for (out, mut edge) in outs {
-        edge.sort_unstable();
-        let _ = writeln!(p, r#"{} -> {} [label="{}"];"#, idx, out, print::pretty_chs_display(&edge));
-      }
-      match node.0 {
-        Some(id) => { let _ = writeln!(p, r#"{}[shape=doublecircle, label="{}\nacc:{}"]"#, idx, idx, id); }
-        None => { let _ = writeln!(p, r#"{}[shape=circle, label="{}"]"#, idx, idx); }
-      };
-    }
-    let _ = writeln!(p, "}}");
-    p
   }
 
   pub fn minimize(&self) -> Dfa {

@@ -32,12 +32,12 @@ Note that in the second image, state 3 is a dead state, which is eliminated in t
 
 re2dfa supports a subset of regex, here are a few points that fail to meet the regex standards:
 
-1. `{n}`,`{m,n}`,`^`,`$` are not supported. But `{`,`}`,`^`,`$` still need using `\` to escape
-2. `()` has no effect on grouping
-3. only greedy matching is supported
-4. although `\s`,`\d`,`\w` are supported,`\S`,`\D`,`\W` are not
-5. `.` match all characters,instead of all characters except `\n`
-6. doesn't support multi-byte character inside `[]`
+1. `{n}`,`{m,n}`,`^`,`$` are not supported. But `{`,`}`,`^`,`$` still need using `\` to escape.
+2. `()` has no effect on grouping. Actually we have no concept of grouping.
+3. Only support greedy matching. In current implementation, ".*?" can't be parsed.
+4. Although `\s`,`\d`,`\w` are supported,`\S`,`\D`,`\W` are not.
+5. `.` match all characters, instead of all characters except `\n`. If you want to match all characters except `\n`, please use `[^\n]`.
+6. Doesn't support multi-byte character inside `[]`. For example, `[你好]` will be rejected.
 
 There is no guarantee that all other standards in regex are properly implemented, either.
 
