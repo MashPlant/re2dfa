@@ -1,4 +1,4 @@
-use nom::{branch::alt, bytes::complete::tag, character::complete::{char, one_of, none_of}, combinator::{map, cut}, error::{convert_error, ParseError, VerboseError}, multi::{separated_list, many1}, sequence::{preceded, terminated, tuple}, Err, IResult};
+use nom::{branch::alt, bytes::complete::tag, character::complete::{char, one_of, none_of}, combinator::{map, cut}, error::{convert_error, ParseError, VerboseError}, multi::{separated_list0, many1}, sequence::{preceded, terminated, tuple}, Err, IResult};
 use std::{collections::HashSet, str};
 
 // theoretically Concat & Disjunction only need 2 children
@@ -83,7 +83,7 @@ fn range<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Re, E> {
 }
 
 fn re<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Re, E> {
-  let (i, disjunction) = separated_list(char('|'), map(many1(atom_with_suffix), Concat))(i)?;
+  let (i, disjunction) = separated_list0(char('|'), map(many1(atom_with_suffix), Concat))(i)?;
   Ok((i, match disjunction.len() { 0 => Eps, 1 => disjunction.into_iter().next().unwrap(), _ => Disjunction(disjunction) }))
 }
 
