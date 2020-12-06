@@ -1,120 +1,94 @@
-use crate::nfa::Nfa;
-use bitset::BitSet;
-use std::collections::{HashMap, HashSet, VecDeque};
-use std::borrow::Borrow;
+use crate::{Nfa, HashMap};
+use std::collections::VecDeque;
 
-type DfaNode = HashMap<u8, u32>;
+type DfaNode = (Option<u32>, HashMap<u8, u32>);
 
 // nodes[i].0 stands for node state(whether is terminal, and which nfa it belongs)
 // a valid Dfa should have nodes.len() >= 1
-#[derive(Debug)]
 pub struct Dfa {
-  pub nodes: Vec<(Option<u32>, DfaNode)>,
+  pub nodes: Vec<DfaNode>,
+  // all the `u8` keys in `nodes` should be within [0, ec_num)
+  pub ec_num: usize,
+  // `ec[x] == y` means x is mapped to y in `nodes`
+  pub ec: [u8; 256],
 }
 
 impl Dfa {
-  fn e_close(bs: &mut BitSet, nfa: &Nfa) {
-    let mut changed = true;
-    while changed {
-      changed = false;
-      for (i, edges) in nfa.nodes.iter().enumerate() {
-        unsafe {
-          if bs.test_unchecked(i) {
-            if let Some(eps) = edges.get(&None) {
-              for &out in eps {
-                changed |= !(bs.test_unchecked(out as usize));
-                bs.set_unchecked(out as usize);
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-}
+  // the generated dfa contains a dead state, which will eliminated when minimizing it
+  pub fn from_nfa(nfa: &Nfa) -> Dfa {
+    let (ec_num, nfa_node, nfa_e_close) = (nfa.ec_num, nfa.nodes.as_ptr(), nfa.e_close.as_ptr());
+    let elem_len = bitset::bslen(nfa.nodes.len());
 
-impl Dfa {
-  // the generated dfa contains a dead state, which will be of help in minimizing it
-  pub fn from_nfa(nfa: &Nfa, id: u32) -> Dfa {
-    assert!(nfa.nodes.len() >= 2);
-    let mut alphabet = HashSet::new();
-    for edges in &nfa.nodes {
-      for (&k, _) in edges {
-        alphabet.insert(k);
-      }
-    }
-    alphabet.remove(&None);
-    let alphabet = alphabet.into_iter().collect::<Vec<_>>();
-    let mut bs = BitSet::new(nfa.nodes.len());
-    bs.set(0);
-    Dfa::e_close(&mut bs, nfa);
-    let mut ss = HashMap::new();
+    assert!(elem_len != 0 && elem_len * nfa.nodes.len() == nfa.e_close.len());
+
+    let mut tmp = Box::<[u32]>::from(vec![0; elem_len]);
+    let mut ss = HashMap::default();
     let mut q = VecDeque::new();
-    ss.insert(bs.clone(), 0);
-    q.push_back(bs);
-    let mut tmp = BitSet::new(nfa.nodes.len());
+
+    // eps closure of nfa node 0
+    let start = Box::<[u32]>::from(unsafe { std::slice::from_raw_parts(nfa_e_close, elem_len) });
+    ss.insert(start.clone(), 0);
+    q.push_back(start);
+
     let mut nodes = Vec::new();
     while let Some(cur) = q.pop_front() {
-      let mut link = HashMap::new();
-      for &k in &alphabet {
-        let k = k.unwrap(); // it is safe, because we removed `None` in `alphabet`
-        tmp.clear_all();
-        for (i, edges) in nfa.nodes.iter().enumerate() {
-          unsafe {
-            if cur.test_unchecked(i) {
-              if let Some(outs) = edges.get(&Some(k)) {
-                for &out in outs {
-                  tmp.set_unchecked(out as usize);
-                }
-              }
+      let cur = bitset::ibs(&cur);
+      let mut link = HashMap::default();
+      for k in 0..ec_num {
+        bitset::bs(&mut tmp).clear();
+        cur.ones(|i| unsafe {
+          if let Some(outs) = (*nfa_node.add(i)).edges.get(&(k as u8)) {
+            for &out in outs {
+              bitset::ubs(&*tmp).or(nfa_e_close.add(out as usize * elem_len), elem_len);
             }
           }
-        }
-        Dfa::e_close(&mut tmp, nfa);
+        });
         let id = ss.len() as u32;
         let id = *ss.entry(tmp.clone()).or_insert_with(|| {
           q.push_back(tmp.clone());
           id
         });
-        link.insert(k, id);
+        link.insert(k as u8, id);
       }
-      nodes.push((if cur.test(nfa.nodes.len() - 1) { Some(id) } else { None }, link));
+      let mut id = None;
+      cur.ones(|i| unsafe { if id.is_none() { id = (*nfa_node.add(i)).id; } });
+      nodes.push((id, link));
     }
-    Dfa { nodes }
+    Dfa { nodes, ec_num, ec: nfa.ec }
   }
 
-  pub fn minimize(&self) -> Dfa {
-    assert!(self.nodes.len() >= 1);
+  pub fn minimize(&mut self) {
+    assert!(!self.nodes.is_empty());
+
     let n = self.nodes.len();
-    let mut rev_edges = vec![HashMap::new(); n];
+    let mut rev_edges = vec![HashMap::default(); n];
+    let rev_edges = rev_edges.as_mut_ptr();
     for (i, (_, edges)) in self.nodes.iter().enumerate() {
       for (&k, &out) in edges {
-        rev_edges[out as usize].entry(k).or_insert_with(|| Vec::new()).push(i as u32);
+        unsafe { (*rev_edges.add(out as usize)).entry(k).or_insert(Vec::new()).push(i as u32); }
       }
     }
-    let mut dp = BitSet::new(n * n); // only access upper part, i.e., should guarantee i < j if access it with i * n + j
+    let dp = bitset::bsmake(n * n); // only access upper part, i.e., should guarantee i < j if access it with i * n + j
+    let dp = unsafe { bitset::ubs(&*dp) };
     let mut q = VecDeque::new();
-    for (i, (id1, _)) in self.nodes.iter().enumerate() {
-      for (j, (id2, _)) in self.nodes.iter().skip(i).enumerate() {
-        let j = i + j; // the real index (compensate for `skip(i)`)
+    for (i, &(id1, _)) in self.nodes.iter().enumerate() {
+      for (j, &(id2, _)) in self.nodes.iter().enumerate().skip(i) {
         if id1 != id2 {
-          unsafe { dp.set_unchecked(i * n + j); }
+          dp.set(i * n + j);
           q.push_back((i as u32, j as u32));
         }
       }
     }
     while let Some((i, j)) = q.pop_front() {
-      let (rev_i, rev_j) = (&rev_edges[i as usize], &rev_edges[j as usize]);
+      let (rev_i, rev_j) = unsafe { (&*rev_edges.add(i as usize), &*rev_edges.add(j as usize)) };
       for (k_i, out_i) in rev_i {
         if let Some(out_j) = rev_j.get(k_i) {
-          for &ii in out_i {
-            for &jj in out_j {
-              let (ii, jj) = if ii < jj { (ii, jj) } else { (jj, ii) };
-              unsafe {
-                if !dp.test_unchecked(ii as usize * n + jj as usize) {
-                  dp.set_unchecked(ii as usize * n + jj as usize);
-                  q.push_back((ii, jj));
-                }
+          for &i in out_i {
+            for &j in out_j {
+              let (i, j) = if i < j { (i, j) } else { (j, i) };
+              if !dp.get(i as usize * n + j as usize) {
+                dp.set(i as usize * n + j as usize);
+                q.push_back((i, j));
               }
             }
           }
@@ -128,112 +102,48 @@ impl Dfa {
     let mut q = VecDeque::with_capacity(n);
     // if there is no node, we can't delete this node, this is the requirement of Dfa (nodes.len() >= 1)
     let dead_node = if n == 1 { None } else {
-      (0..n).find(|&i| {
-        // not accept state and no out edge
-        self.nodes[i].0.is_none() && self.nodes[i].1.iter().all(|(_, &out)| out == i as u32)
-      })
+      self.nodes.iter().enumerate().position(|(i, node)|
+        node.0.is_none() && node.1.iter().all(|(_, &out)| out == i as u32))
     };
     for i in 0..n {
-      if dead_node != Some(i) && ids[i] == INVALID {
-        let id = id2old.len() as u32;
-        ids[i] = id;
-        q.push_back(i);
-        let mut old = vec![i as u32];
-        while let Some(cur) = q.pop_front() {
-          for j in cur..n {
-            if ids[j] == INVALID {
-              if unsafe { !dp.test_unchecked(cur * n + j) } {
-                ids[j] = id;
-                q.push_back(j);
-                old.push(j as u32);
+      unsafe {
+        if dead_node != Some(i) && *ids.get_unchecked(i) == INVALID {
+          let id = id2old.len() as u32;
+          *ids.get_unchecked_mut(i) = id;
+          q.push_back(i);
+          let mut old = vec![i as u32];
+          while let Some(cur) = q.pop_front() {
+            for j in cur..n {
+              if *ids.get_unchecked(j) == INVALID {
+                if !dp.get(cur * n + j) {
+                  *ids.get_unchecked_mut(j) = id;
+                  q.push_back(j);
+                  old.push(j as u32);
+                }
               }
             }
           }
+          id2old.push(old);
         }
-        id2old.push(old);
       }
     }
 
     let mut nodes = Vec::new();
     for old in id2old {
-      let mut link = HashMap::new();
-      let acc = self.nodes[old[0] as usize].0; // they must have the same acc, so pick the acc of 0
-      for o in old {
-        for (&k, &out) in &self.nodes[o as usize].1 {
-          if dead_node != Some(out as usize) {
-            link.insert(k, ids[out as usize]);
-          }
-        }
-      }
-      nodes.push((acc, link));
-    }
-    Dfa { nodes }
-  }
-
-  // basically it is just like turning an nfa to an dfa
-  // the return dfa is minimized and contains no dead state if input `dfas` are all minimized and contain no dead state
-  pub fn merge<D: Borrow<Dfa>>(dfas: &[D]) -> Dfa {
-    let mut alphabet = HashSet::new();
-    for dfa in dfas {
-      assert!(dfa.borrow().nodes.len() >= 1);
-      for node in &dfa.borrow().nodes {
-        for (&k, _) in &node.1 {
-          alphabet.insert(k);
-        }
-      }
-    }
-    let alphabet = alphabet.into_iter().collect::<Vec<_>>();
-    let mut n_nodes = Vec::new();
-    let mut accept = HashMap::new();
-    let mut begs = Vec::new();
-    for dfa in dfas {
-      let len = n_nodes.len() as u32;
-      begs.push(len);
-      for (idx, node) in dfa.borrow().nodes.iter().enumerate() {
-        if let Some(id) = node.0 {
-          accept.insert(idx as u32 + len, id);
-        }
-        let edges = node.1.iter().map(|(&k, &v)| (k, v + len)).collect::<HashMap<_, _>>();
-        n_nodes.push(edges);
-      }
-    }
-    let mut bs = BitSet::new(n_nodes.len());
-    for beg in begs {
-      unsafe { bs.set_unchecked(beg as usize); }
-    }
-    let mut ss = HashMap::new();
-    let mut q = VecDeque::new();
-    ss.insert(bs.clone(), 0);
-    q.push_back(bs);
-    let mut tmp = BitSet::new(n_nodes.len());
-    let mut nodes = Vec::new();
-    while let Some(cur) = q.pop_front() {
-      let mut link = HashMap::new();
-      for &k in &alphabet {
-        tmp.clear_all();
-        for (i, edges) in n_nodes.iter().enumerate() {
-          unsafe {
-            if cur.test_unchecked(i) {
-              if let Some(&out) = edges.get(&k) {
-                tmp.set_unchecked(out as usize);
-              }
+      unsafe {
+        let mut link = HashMap::default();
+        // they must have the same acc, so pick the acc of old[0]
+        let acc = self.nodes.get_unchecked(*old.get_unchecked(0) as usize).0;
+        for o in old {
+          for (&k, &out) in &self.nodes.get_unchecked(o as usize).1 {
+            if dead_node != Some(out as usize) {
+              link.insert(k, *ids.get_unchecked(out as usize));
             }
           }
         }
-        if tmp.any() {
-          let id = ss.len() as u32;
-          let id = *ss.entry(tmp.clone()).or_insert_with(|| {
-            q.push_back(tmp.clone());
-            id
-          });
-          link.insert(k, id);
-        }
+        nodes.push((acc, link));
       }
-      let acc = (0..n_nodes.len()).filter_map(|i| unsafe {
-        accept.get(&(i as u32)).and_then(|x| if cur.test_unchecked(i) { Some(*x) } else { None })
-      }).min();
-      nodes.push((acc, link));
     }
-    Dfa { nodes }
+    self.nodes = nodes;
   }
 }

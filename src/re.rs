@@ -1,99 +1,151 @@
-use nom::{branch::alt, bytes::complete::tag, character::complete::{char, one_of, none_of}, combinator::{map, cut}, error::{convert_error, ParseError, VerboseError}, multi::{separated_list0, many1}, sequence::{preceded, terminated, tuple}, Err, IResult};
-use std::{collections::HashSet, str};
+use nom::{branch::alt, bytes::complete::tag, combinator::{map, cut}, multi::{separated_list0, many1}, sequence::{preceded, terminated, tuple}, Err, error::{ErrorKind, Error}, IResult};
+use Re::*;
 
-// theoretically Concat & Disjunction only need 2 children
-// but use a Vec here can make future analysis faster
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum Re {
   Eps,
   Ch(u8),
-  Concat(Vec<Re>),
-  Disjunction(Vec<Re>),
+  // theoretically Concat & Disjunction only need 2 children, but using Vec here can make future analysis faster
+  Concat(Box<[Re]>),
+  Disjunction(Box<[Re]>),
+  // DisjunctionCh(bitset) == Disjunction([(ones in bitset).map(Ch)])
+  // this is a more efficient way to represent [] in regex
+  DisjunctionCh(Box<[u32; 8]>),
   Kleene(Box<Re>),
 }
 
-use Re::*;
-use nom::bytes::complete::take_while_m_n;
-use nom::combinator::map_opt;
+// our simple implementation doesn't support {n},^,$, but still regard them as meta chars
+const META: &[u8] = br"()[].|*+\{}^$?";
 
-// our simple re doesn't support {n},^,$, but still them as meta chars
-const META: &str = r"()[].|*+\{}^$?";
+macro_rules! err {
+  ($i: expr, $code: ident) => { Err(Err::Error(Error::new($i, ErrorKind::$code))) };
+}
 
-// it is called escaped_ascii instead of ascii_escaped, because it only accept escape chars
-// '\' is considered as both a meta char and a normal ascii escape cha
-fn escaped_ascii<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, u8, E> {
+fn escaped_ascii<'a>(i: &'a [u8]) -> IResult<&'a [u8], u8> {
   alt((
-    map(tag(r#"\""#), |_| b'\"'),
-    map(tag(r"\\"), |_| b'\\'),
-    map(tag(r"\n"), |_| b'\n'),
-    map(tag(r"\t"), |_| b'\t'),
-    map(tag(r"\r"), |_| b'\r'),
-    map(preceded(tag(r"\x"), take_while_m_n(2, 2, |ch: char| ch.is_digit(16))), |s| u8::from_str_radix(s, 16).unwrap()),
+    map(tag(br#"\""#), |_| b'\"'),
+    map(tag(br"\\"), |_| b'\\'),
+    map(tag(br"\n"), |_| b'\n'),
+    map(tag(br"\t"), |_| b'\t'),
+    map(tag(br"\r"), |_| b'\r'),
+    preceded(tag(br"\x"), |i: &'a [u8]| {
+      if let [hi, lo, ref i @ ..] = i {
+        let hex = |x| match x {
+          b'0'..=b'9' => Some(x - b'0'), b'a'..=b'f' => Some(x - b'a' + 10), b'A'..=b'F' => Some(x - b'A' + 10), _ => None
+        };
+        if let (Some(hi), Some(lo)) = (hex(*hi), hex(*lo)) { return Ok((i, hi * 16 + lo)); }
+      }
+      err!(i, HexDigit)
+    }),
   ))(i)
 }
 
-fn atom<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Re, E> {
+#[inline(always)]
+fn byte(b: u8) -> impl Fn(&[u8]) -> IResult<&[u8], ()> {
+  move |i| { match i { [x, ref i @ ..] if *x == b => Ok((i, ())), _ => err!(i, Char) } }
+}
+
+#[inline(always)]
+fn none_of(s: &'static [u8]) -> impl Fn(&[u8]) -> IResult<&[u8], u8> {
+  move |i| { match i { [x, ref i @ ..] if !s.contains(x) => Ok((i, *x)), _ => err!(i, NoneOf) } }
+}
+
+#[inline(always)]
+fn one_of(s: &'static [u8]) -> impl Fn(&[u8]) -> IResult<&[u8], u8> {
+  move |i| { match i { [x, ref i @ ..] if s.contains(x) => Ok((i, *x)), _ => err!(i, OneOf) } }
+}
+
+fn atom(i: &[u8]) -> IResult<&[u8], Re> {
   alt((
-    map(none_of(META), |ch| if ch.len_utf8() == 1 { Ch(ch as u8) } else { Concat(ch.encode_utf8(&mut [0; 4]).bytes().map(|ch| Ch(ch)).collect()) }),
-    map(escaped_ascii, |ch| Ch(ch)),
-    map(tag(r"\d"), |_| Disjunction((b'0'..=b'9').map(|ch| Ch(ch)).collect())),
-    map(tag(r"\w"), |_| Disjunction((b'0'..=b'9').chain(b'a'..=b'z').chain(b'A'..=b'Z').chain(Some(b'_')).map(|ch| Ch(ch)).collect())),
-    map(tag(r"\s"), |_| Disjunction("\n\t\r ".bytes().map(|ch| Ch(ch)).collect())),
-    map(char('.'), |_| Disjunction((0..=255).map(|ch| Ch(ch)).collect())),
-    preceded(char('\\'), map(cut(one_of(META)), |ch| Ch(ch as u8))),
-    preceded(char('('), cut(terminated(re, char(')')))),
+    map(none_of(META), Ch),
+    map(escaped_ascii, Ch),
+    // equivalent to `Disjunction((b'0'..=b'9').map(Ch).collect())`
+    map(tag(br"\d"), |_| DisjunctionCh([0, 0b11111111110000000000000000, 0, 0, 0, 0, 0, 0].into())),
+    // equivalent to `Disjunction((b'0'..=b'9').chain(b'..=b'z').chain(b'..=b'Z').chain(Some(b'_')).map(Ch).collect())`
+    map(tag(br"\w"), |_| DisjunctionCh([0, 0b11111111110000000000000000, 0b10000111111111111111111111111110, 0b111111111111111111111111110, 0, 0, 0, 0].into())),
+    // equivalent to `Disjunction("\n\t\r ".bytes().map(Ch).collect())`
+    map(tag(br"\s"), |_| DisjunctionCh([0b10011000000000, 0b1, 0, 0, 0, 0, 0, 0].into())),
+    // equivalent to `Disjunction((0..=255).map(Ch).collect())`
+    map(byte(b'.'), |_| DisjunctionCh([!0; 8].into())),
+    preceded(byte(b'\\'), map(cut(one_of(META)), Ch)),
+    preceded(byte(b'('), cut(terminated(re, byte(b')')))),
     range,
   ))(i)
 }
 
-fn atom_with_suffix<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Re, E> {
-  alt((
-    map(terminated(atom, char('*')), |a| Kleene(Box::new(a))),
-    map(terminated(atom, char('+')), |a| Concat(vec![a.clone(), Kleene(Box::new(a))])),
-    map(terminated(atom, char('?')), |a| Disjunction(vec![Eps, a])),
-    atom,
-  ))(i)
+fn atom_with_suffix(i: &[u8]) -> IResult<&[u8], Re> {
+  let (i, a) = atom(i)?;
+  Ok(match i {
+    [b'*', ref i @ ..] => (i, Kleene(Box::new(a))),
+    [b'+', ref i @ ..] => (i, Concat([a.clone(), Kleene(Box::new(a))].into())),
+    [b'?', ref i @ ..] => (i, Disjunction([Eps, a].into())),
+    _ => (i, a),
+  })
 }
 
 // meta characters are not escaped here, but other normal ascii escape chars and [] are
 // multi-byte char is not supported in []
-fn ascii_no_bracket<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, u8, E> {
+fn ascii_no_bracket(i: &[u8]) -> IResult<&[u8], u8> {
   alt((
-    map(tag(r"\["), |_| b'['),
-    map(tag(r"\]"), |_| b']'),
+    map(tag(br"\["), |_| b'['),
+    map(tag(br"\]"), |_| b']'),
     escaped_ascii,
-    map_opt(none_of(r"\[]"), |ch| if ch.len_utf8() == 1 { Some(ch as u8) } else { None }),
+    none_of(br"\[]"),
   ))(i)
 }
 
-fn range<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Re, E> {
-  // Fn doesn't implement Clone, so can't store the result to a variable and use it twice
-  macro_rules! ranges {
-    () => {
-      cut(map(many1(alt((
-        map(tuple((ascii_no_bracket, char('-'), ascii_no_bracket)), |(l, _, u)| (l, u)),
+fn range<'a>(i: &'a [u8]) -> IResult<&'a [u8], Re> {
+  preceded(byte(b'['), cut(terminated(|i: &'a [u8]| {
+    let (mut i, inv) = match i { [b'^', ref i @ ..] => (i, true), _ => (i, false) };
+    let mut set = [0; 8];
+    let mut bs = bitset::bs(&mut set);
+    loop {
+      match alt((
+        map(tuple((ascii_no_bracket, byte(b'-'), ascii_no_bracket)), |(l, _, u)| (l, u)),
         map(ascii_no_bracket, |x| (x, x)),
-      ))), |rs| rs.iter().flat_map(|&(l, u)| l..=u).collect::<HashSet<_>>()))
-    };
-  }
-  preceded(char('['), cut(terminated(alt((
-    map(preceded(char('^'), ranges!()), |r| Disjunction((0..=255).filter(|x| !r.contains(x)).map(|ch| Ch(ch)).collect())),
-    map(ranges!(), |r| Disjunction(r.into_iter().map(|ch| Ch(ch)).collect::<Vec<_>>())),
-  )), char(']'))))(i)
+      ))(i) {
+        Err(Err::Error(_)) => break,
+        Err(e) => return Err(e),
+        Ok((i1, (l, u))) => {
+          i = i1;
+          for x in l..=u { bs.set(x as usize); }
+        }
+      }
+    }
+    if inv { bs.inv(); }
+    Ok((i, DisjunctionCh(set.into())))
+  }, byte(b']'))))(i)
 }
 
-fn re<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Re, E> {
-  let (i, disjunction) = separated_list0(char('|'), map(many1(atom_with_suffix), Concat))(i)?;
-  Ok((i, match disjunction.len() { 0 => Eps, 1 => disjunction.into_iter().next().unwrap(), _ => Disjunction(disjunction) }))
+fn re(i: &[u8]) -> IResult<&[u8], Re> {
+  // currently for a Vec with len == 1, the range check in `.remove(0)` can be optimized out
+  // but the check in `.into_iter().next().unwrap()` cannot, so I choose the former
+  let (i, mut d) = separated_list0(byte(b'|'), map(many1(atom_with_suffix), |mut c|
+    match c.len() { 1 => c.remove(0), _ => Concat(c.into()) }))(i)?;
+  Ok((i, match d.len() {
+    0 => Eps, 1 => d.remove(0), _ => {
+      let (mut all_ch, mut set) = (true, [0; 8]);
+      let mut bs = bitset::bs(&mut set);
+      for x in &d {
+        match x {
+          &Ch(ch) => bs.set(ch as usize),
+          DisjunctionCh(s) => { bs.or(s.as_ref()); }
+          _ => {
+            all_ch = false;
+            break;
+          }
+        }
+      }
+      if all_ch { DisjunctionCh(set.into()) } else { Disjunction(d.into()) }
+    }
+  }))
 }
 
 pub fn parse(i: &str) -> Result<Re, String> {
-  let result = re::<VerboseError<&str>>(i);
+  let result = re(i.as_bytes());
   match result {
-    Ok(("", result)) => Ok(result),
+    Ok((b"", result)) => Ok(result),
     Ok((remain, _)) => Err(format!("remaining part cannot be parsed: {:?}", remain)),
-    Err(Err::Error(e)) | Err(Err::Failure(e)) => Err(convert_error(i, e)),
-    // we don't use nom's stream mode, so won't have this error
-    Err(Err::Incomplete(_)) => unreachable!()
+    Err(e) => Err(format!("{}", e)),
   }
 }
