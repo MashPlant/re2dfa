@@ -95,10 +95,10 @@ fn ascii_no_bracket(i: &[u8]) -> IResult<&[u8], u8> {
 }
 
 fn range<'a>(i: &'a [u8]) -> IResult<&'a [u8], Re> {
+  // basically copied from `nom::multi::many1`, but avoid allocating a Vec as the result
   preceded(byte(b'['), cut(terminated(|i: &'a [u8]| {
     let (mut i, inv) = match i { [b'^', ref i @ ..] => (i, true), _ => (i, false) };
     let mut set = [0; 8];
-    let mut bs = bitset::bs(&mut set);
     loop {
       match alt((
         map(tuple((ascii_no_bracket, byte(b'-'), ascii_no_bracket)), |(l, _, u)| (l, u)),
@@ -108,11 +108,11 @@ fn range<'a>(i: &'a [u8]) -> IResult<&'a [u8], Re> {
         Err(e) => return Err(e),
         Ok((i1, (l, u))) => {
           i = i1;
-          for x in l..=u { bs.set(x as usize); }
+          for x in l..=u { bitset::bs(&mut set).set(x as usize); }
         }
       }
     }
-    if inv { bs.inv(); }
+    if inv { bitset::bs(&mut set).inv(); }
     Ok((i, DisjunctionCh(set.into())))
   }, byte(b']'))))(i)
 }
@@ -124,26 +124,19 @@ fn re(i: &[u8]) -> IResult<&[u8], Re> {
     match c.len() { 1 => c.remove(0), _ => Concat(c.into()) }))(i)?;
   Ok((i, match d.len() {
     0 => Eps, 1 => d.remove(0), _ => {
-      let (mut all_ch, mut set) = (true, [0; 8]);
-      let mut bs = bitset::bs(&mut set);
-      for x in &d {
-        match x {
-          &Ch(ch) => bs.set(ch as usize),
-          DisjunctionCh(s) => { bs.or(s.as_ref()); }
-          _ => {
-            all_ch = false;
-            break;
-          }
-        }
-      }
-      if all_ch { DisjunctionCh(set.into()) } else { Disjunction(d.into()) }
+      let mut set = [0; 8];
+      // if all possibilities are `Ch` or `DisjunctionCh`, this `Disjunction` can be simplified
+      if d.iter().all(|x| match x {
+        &Ch(ch) => (bitset::bs(&mut set).set(ch as usize), true).1,
+        DisjunctionCh(s) => (bitset::bs(&mut set).or(s.as_ref()), true).1,
+        _ => false,
+      }) { DisjunctionCh(set.into()) } else { Disjunction(d.into()) }
     }
   }))
 }
 
-pub fn parse(i: &str) -> Result<Re, String> {
-  let result = re(i.as_bytes());
-  match result {
+pub fn parse(i: &[u8]) -> Result<Re, String> {
+  match re(i) {
     Ok((b"", result)) => Ok(result),
     Ok((remain, _)) => Err(format!("remaining part cannot be parsed: {:?}", remain)),
     Err(e) => Err(format!("{}", e)),

@@ -14,7 +14,7 @@ pub type HashMap<K, V> = std::collections::HashMap<K, V, BuildHasherDefault<AHas
 pub type HashSet<K> = std::collections::HashSet<K, BuildHasherDefault<AHasher>>;
 
 // return Err((idx, reason)): the `idx`th regex in `re` is invalid because of the syntax error described in`reason`
-pub fn re2dfa<I: IntoIterator<Item=S>, S: AsRef<str>>(re: I) -> Result<Dfa, (usize, String)> {
+pub fn re2dfa<'a>(re: impl IntoIterator<Item=&'a [u8]>) -> Result<Dfa, (usize, String)> {
   let nfa = Nfa::from_re(re)?;
   let mut dfa = Dfa::from_nfa(&nfa);
   dfa.minimize();

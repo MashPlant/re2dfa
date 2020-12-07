@@ -24,10 +24,10 @@ pub struct Nfa {
 }
 
 impl Nfa {
-  pub fn from_re<I: IntoIterator<Item=S>, S: AsRef<str>>(re: I) -> Result<Nfa, (usize, String)> {
+  pub fn from_re<'a>(re: impl IntoIterator<Item=&'a [u8]>) -> Result<Nfa, (usize, String)> {
     let mut buf = Vec::new();
     for (id, re) in re.into_iter().enumerate() {
-      match parse(re.as_ref()) {
+      match parse(re) {
         Ok(re) => buf.push(re),
         Err(err) => return Err((id, err)),
       }
