@@ -1,5 +1,5 @@
 use smallvec::{SmallVec, smallvec};
-use crate::{re::{parse, Re::{self, *}}, HashMap};
+use crate::*;
 
 #[derive(Debug)]
 pub struct NfaNode {

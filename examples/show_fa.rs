@@ -12,7 +12,7 @@ fn main() -> Result<()> {
     .arg(Arg::with_name("dfa").long("dfa").takes_value(true).help("show the minimized dfa"))
     .get_matches();
   let input = m.value_of("input").unwrap();
-  let re = re::parse(input).expect("invalid regex");
+  let re = re::parse(input.as_bytes()).expect("invalid regex");
   let nfa = Nfa::from_re1(&[re]);
   if let Some(path) = m.value_of("nfa") { write(path, nfa.print_dot())?; }
   let mut dfa = Dfa::from_nfa(&nfa);

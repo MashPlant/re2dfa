@@ -1,5 +1,5 @@
-use crate::{Nfa, HashMap};
 use std::collections::VecDeque;
+use crate::*;
 
 type DfaNode = (Option<u32>, HashMap<u8, u32>);
 

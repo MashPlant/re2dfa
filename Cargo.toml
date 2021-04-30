@@ -5,11 +5,10 @@ authors = ["MashPlant <740678788@qq.com>"]
 edition = "2018"
 
 [dependencies]
+tools = { git = "https://github.com/MashPlant/tools" }
+pretty_u8 = { git = "https://github.com/MashPlant/pretty_u8" }
 smallvec = { version = "*", features = ["union"] }
 nom = "*"
-ahash = { version = "*", default-features = false }
-bitset = { git = "https://github.com/MashPlant/bitset" }
-pretty_u8 = { git = "https://github.com/MashPlant/pretty_u8" }
 
 [dev-dependencies]
 clap = "*"

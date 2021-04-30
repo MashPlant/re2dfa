@@ -1,19 +1,5 @@
-use pretty_u8::pretty_u8;
-use std::fmt::{Display, Formatter, Result};
-use crate::{Nfa, Dfa, HashMap};
-
-#[inline(always)]
-pub fn fn2display(f: impl Fn(&mut Formatter)) -> impl Display {
-  struct S<F>(F);
-  impl<F: Fn(&mut Formatter)> Display for S<F> {
-    fn fmt(&self, f: &mut Formatter) -> Result {
-      // error is impossible in our context, so we don't handle it
-      (self.0)(f);
-      Ok(())
-    }
-  }
-  S(f)
-}
+use std::fmt::Display;
+use crate::*;
 
 fn pretty_u8s<'a>(chs: &'a [u8]) -> impl Display + 'a {
   fn2display(move |f| {
@@ -23,12 +9,13 @@ fn pretty_u8s<'a>(chs: &'a [u8]) -> impl Display + 'a {
       while j + 1 < chs.len() && chs[j + 1] == chs[j] + 1 { j += 1; }
       let sep = if i == 0 { "" } else { ", " };
       if j <= i + 1 {
-        for i in i..=j { let _ = write!(f, "{}{}", sep, pretty_u8(chs[i])); }
+        for i in i..=j { write!(f, "{}{}", sep, pretty_u8::pretty_u8(chs[i]))?; }
       } else {
-        let _ = write!(f, "{}{}-{}", sep, pretty_u8(chs[i]), pretty_u8(chs[j]));
+        write!(f, "{}{}-{}", sep, pretty_u8::pretty_u8(chs[i]), pretty_u8::pretty_u8(chs[j]))?;
       }
       i = j + 1;
     }
+    Ok(())
   })
 }
 
@@ -39,7 +26,7 @@ fn print_dot<'a, T: 'a, I>(ec_num: usize, ec: &[u8; 256], nodes: &'a [T], node_a
     rev_ec[ec as usize].push(idx as u8);
   }
   fn2display(move |f| {
-    let _ = f.write_str("digraph g {\n");
+    f.write_str("digraph g {\n")?;
     for (idx, node) in nodes.iter().enumerate() {
       let mut outs = HashMap::default();
       let (id, edges) = node_attr(node);
@@ -48,20 +35,20 @@ fn print_dot<'a, T: 'a, I>(ec_num: usize, ec: &[u8; 256], nodes: &'a [T], node_a
           if let Some(k) = k {
             outs.entry(out).or_insert(Vec::new()).extend(rev_ec[k as usize].iter());
           } else {
-            let _ = writeln!(f, r#"{} -> {} [label="ε"];"#, idx, out);
+            writeln!(f, r#"{} -> {} [label="ε"];"#, idx, out)?;
           }
         }
       }
       for (out, mut edge) in outs {
         edge.sort_unstable();
-        let _ = writeln!(f, r#"{} -> {} [label="{}"];"#, idx, out, pretty_u8s(&edge));
+        writeln!(f, r#"{} -> {} [label="{}"];"#, idx, out, pretty_u8s(&edge))?;
       }
       match id {
-        Some(id) => { let _ = writeln!(f, r#"{}[shape=doublecircle, label="{0}\nacc:{}"]"#, idx, id); }
-        None => { let _ = writeln!(f, r#"{}[shape=circle, label="{0}"]"#, idx); }
+        Some(id) => writeln!(f, r#"{}[shape=doublecircle, label="{0}\nacc:{}"]"#, idx, id)?,
+        None => writeln!(f, r#"{}[shape=circle, label="{0}"]"#, idx)?,
       };
     }
-    let _ = f.write_str("}");
+    f.write_str("}")
   })
 }
 

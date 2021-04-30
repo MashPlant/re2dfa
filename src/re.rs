@@ -1,5 +1,5 @@
 use nom::{branch::alt, bytes::complete::tag, combinator::{map, cut}, multi::{separated_list0, many1}, sequence::{preceded, terminated, tuple}, Err, error::{ErrorKind, Error}, IResult};
-use Re::*;
+use crate::*;
 
 #[derive(Debug, Clone)]
 pub enum Re {
